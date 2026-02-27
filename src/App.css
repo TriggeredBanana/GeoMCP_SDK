@@ -1,7 +1,3 @@
-.app {
-  /* App styles here */
-}
-
 .logo img {
   height: 50px !important;
   width: auto !important;
@@ -10,4 +6,15 @@
 
 .headerBar {
   background: rgb(255, 255, 255);
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
 }

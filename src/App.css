@@ -11,3 +11,8 @@
 .headerBar {
   background: rgb(255, 255, 255);
 }
+
+.MuiChip-root {
+  background-color: #027038 !important;
+  color: #ffffff !important;
+}

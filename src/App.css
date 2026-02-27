@@ -14,7 +14,55 @@
   flex-direction: column;
 }
 
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar {
+  width: 275px;
+  min-width: 275px;
+  background: #2d2d2d;
+  color: #ffffff;
+  padding: 16px 0;
+  height: 100%;
+}
+
+.sidebar-heading {
+  padding: 8px 20px 16px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: #a0a0a0;
+  letter-spacing: 1px;
+}
+
+.sidebar-menu {
+  list-style: none;
+}
+
+.sidebar-item {
+  display: block;
+  width: 100%;
+  padding: 12px 20px;
+  border: none;
+  background: none;
+  color: #ffffff;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-item:hover {
+  background: #3a3a3a;
+}
+
+.sidebar-item.active {
+  background: #26be76;
+}
+
 .content {
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }

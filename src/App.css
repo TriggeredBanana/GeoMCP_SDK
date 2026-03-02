@@ -220,3 +220,21 @@
 .map-root .leaflet-control-layers input[type="radio"] {
   accent-color: #38bdf8;
 }
+
+.map-google-overlay {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: var(--map-control-bg);
+  color: var(--map-control-text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--map-control-border);
+  z-index: 1000;
+}
+
+.map-google-error {
+  background: rgba(220, 38, 38, 0.8);
+}

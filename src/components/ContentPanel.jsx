@@ -1,10 +1,16 @@
+import { ChatInterface } from './chatInterface';
+
 export function ContentPanel({ activePanel, onClose }) {
-    if (!activePanel) return null; // Don't render if no active panel
+    if (!activePanel) return null;
 
     return (
         <div className="content-panel">
             <button className="close-btn" onClick={onClose}>✕</button>
-            <h2>{activePanel}</h2>
+            {activePanel === 'Chatbot' ? (
+                <ChatInterface />
+            ) : (
+                <h2>{activePanel}</h2>
+            )}
         </div>
-    )
+    );
 }

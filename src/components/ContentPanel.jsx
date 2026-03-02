@@ -1,7 +1,7 @@
 import { ChatInterface } from './chatInterface';
 
 export function ContentPanel({ activePanel, onClose }) {
-    if (!activePanel) return null;  // Don't render if no active panel
+    if (!activePanel) return null; // Don't render if no active panel
 
     return (
         <div className="content-panel">

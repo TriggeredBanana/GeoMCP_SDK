@@ -1,20 +1,20 @@
-import { ChatInterface } from "./chatInterface.jsx";
+import { ChatInterface } from './ChatInterface';
 
 const PANEL_COMPONENTS = {
-    Chatbot: ChatInterface,
-    Kartlag: () => <h2>Kartlag</h2>,
-    Analyse: () => <h2>Analyse</h2>,
-    Eksporter: () => <h2>Eksporter</h2>
+    'Chatbot': ChatInterface,
+    'Kartlag': () => <h2>Kartlag</h2>, // Replace with real component later
+    'Analyse': () => <h2>Analyse</h2>, // Replace with real component later
+    'Eksporter': () => <h2>Eksporter</h2> // Replace with real component later
 };
 
 export function ContentPanel({ activePanel, onClose }) {
-    if (!activePanel) return null;
+    if (!activePanel) return null; // Don't render if no active panel
 
     const Component = PANEL_COMPONENTS[activePanel] || (() => <h2>{activePanel}</h2>);
 
     return (
         <div className="content-panel">
-            <button type="button" className="close-btn" onClick={onClose} aria-label="Lukk panel">✕</button>
+            <button className="close-btn" onClick={onClose}>✕</button>
             <Component />
         </div>
     );

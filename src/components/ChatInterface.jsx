@@ -14,7 +14,7 @@ export function ChatInterface() {
 
   function handleSend() {
     const trimmed = input.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
     setMessages((prev) => [...prev, { role: 'user', text: trimmed, attachments: [...attachments] }]);
     setInput('');
     setAttachments([]);
@@ -60,26 +60,48 @@ export function ChatInterface() {
         {messages.length === 0 ? (
           <p className="chat-empty">Start samtalen...</p>
         ) : (
-          messages.map((msg, i) => (
-            <div key={i} className={`chat-bubble chat-bubble--${msg.role}`}>
-              {msg.text}
-              {msg.attachments && msg.attachments.length > 0 && (
-                <div className="message-attachments">
-                  {msg.attachments.map((att) => (
-                    <div key={att.id} className="attachment-card">
-                      {att.preview ? (
-                        <img src={att.preview} alt={att.name} className="attachment-thumb" />
-                      ) : (
+          messages.map((msg, i) => {
+            // Separate images from files
+            const images = msg.attachments?.filter(att => att.preview) || [];
+            const files = msg.attachments?.filter(att => !att.preview) || [];
+            const hasText = !!msg.text;
+            
+            return (
+              <div key={i} className={`message-wrapper message-wrapper--${msg.role}`}>
+                {/* Text bubble - only if text exists */}
+                {hasText && (
+                  <div className={`chat-bubble chat-bubble--${msg.role}`}>
+                    {msg.text}
+                  </div>
+                )}
+                
+                {/* Images - use compact preview if there's text, full size if not */}
+                {images.length > 0 && (
+                  <div className={`message-image-attachments ${hasText ? 'message-image-attachments--preview' : ''}`}>
+                    {images.map((att) => (
+                      <div key={att.id} className="attachment-image">
+                        <img src={att.preview} alt={att.name} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* Files - use compact preview if there's text, full size if not */}
+                {files.length > 0 && (
+                  <div className={`message-file-attachments ${hasText ? 'message-file-attachments--preview' : ''}`}>
+                    {files.map((att) => (
+                      <div key={att.id} className="attachment-card">
                         <div className="attachment-file-icon">
                           <FileText size={28} />
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))
+                        <span className="attachment-file-name">{att.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>
@@ -112,7 +134,7 @@ export function ChatInterface() {
 )}
 
       <div className="chat-input-area">
-        <div className="Paperclip">
+        <div className="paperclip">
         <button onClick={() => fileInputRef.current.click()}><Paperclip size={18} /></button>
         <input 
           type="file" 

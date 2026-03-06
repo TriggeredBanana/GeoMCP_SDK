@@ -1,10 +1,15 @@
 :root {
   --darkmode: #202020;
   --lightmode: #ffffff;
-  --primarycolor: #26BE76;
-  --secondarycolor: #1E9D63;
-  --hoverdark: #1d1d1d;
+  --primary-color: #26BE76;
+  --secondary-color: #1E9D63;
+  --hover-dark: #1d1d1d;
   --separator-dark: #3d3d3d81;
+  --text-dark: #1a1a1a;
+  --text-light: #ffffff;
+  --icon-dark: #1a1a1a;
+  --text-input-area: #ffffff;
+  --file-attachments: #3d3d3d;
 }
 
 .app {
@@ -134,8 +139,8 @@
 
 .sidebar-item.active {
   background: rgba(38, 190, 118, 0.12);
-  color: var(--primarycolor);
-  box-shadow: inset 3px 0 0 var(--primarycolor);
+  color: var(--primary-color);
+  box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
 .sidebar--collapsed .sidebar-item.active {
@@ -243,8 +248,8 @@
 }
 
 .chat-bubble--user {
-  background: var(--primarycolor);
-  color: #fff;
+  background: var(--primary-color);
+  color: var(--text-dark);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
 }
@@ -267,26 +272,30 @@
   resize: none;
   font-family: inherit;
   font-size: 0.9rem;
-  background: #f8f9fb;
+  background: var(--text-input-area);
   transition: border-color 0.2s;
 }
 
 .chat-input-area textarea:focus {
-  border-color: var(--primarycolor);
+  border-color: var(--primary-color);
 }
 
 .chat-input-area button {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: var(--primarycolor);
-  color: #fff;
+  background: var(--primary-color);
+  color: var(--icon-dark);
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.chat-input-area button:hover {
+  background: var(--secondary-color);
 }
 
 .map-root {
@@ -327,14 +336,14 @@
 
 .map-layers-toggle:hover {
   background: rgba(42, 42, 42, 0.95);
-  color: var(--primarycolor);
+  color: var(--primary-color);
   transform: scale(1.06);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .map-layers-toggle.active {
   background: rgba(38, 190, 118, 0.15);
-  color: var(--primarycolor);
+  color: var(--primary-color);
   border-color: rgba(38, 190, 118, 0.25);
 }
 
@@ -415,7 +424,7 @@
 }
 
 .map-layers-radio.active {
-  border-color: var(--primarycolor);
+  border-color: var(--primary-color);
 }
 
 .map-layers-radio-dot {
@@ -428,7 +437,7 @@
 }
 
 .map-layers-radio.active .map-layers-radio-dot {
-  background: var(--primarycolor);
+  background: var(--primary-color);
   transform: scale(1);
 }
 

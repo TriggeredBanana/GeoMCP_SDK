@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, FileText, X } from 'lucide-react';
+import { ArrowUp, Paperclip, FileText, X } from 'lucide-react';
 
 export function ChatInterface() {
   const [messages, setMessages] = useState([]);
@@ -68,16 +68,9 @@ export function ChatInterface() {
             
             return (
               <div key={i} className={`message-wrapper message-wrapper--${msg.role}`}>
-                {/* Text bubble - only if text exists */}
-                {hasText && (
-                  <div className={`chat-bubble chat-bubble--${msg.role}`}>
-                    {msg.text}
-                  </div>
-                )}
-                
-                {/* Images - use compact preview if there's text, full size if not */}
+                {/* Images - use compact preview if there's text or multiple images */}
                 {images.length > 0 && (
-                  <div className={`message-image-attachments ${hasText ? 'message-image-attachments--preview' : ''}`}>
+                  <div className={`message-image-attachments ${hasText || images.length > 1 ? 'message-image-attachments--preview' : ''}`}>
                     {images.map((att) => (
                       <div key={att.id} className="attachment-image">
                         <img src={att.preview} alt={att.name} />
@@ -86,17 +79,24 @@ export function ChatInterface() {
                   </div>
                 )}
                 
-                {/* Files - use compact preview if there's text, full size if not */}
+                {/* Files - use compact preview if there's text or multiple files */}
                 {files.length > 0 && (
-                  <div className={`message-file-attachments ${hasText ? 'message-file-attachments--preview' : ''}`}>
+                  <div className={`message-file-attachments ${hasText || files.length > 1 ? 'message-file-attachments--preview' : ''}`}>
                     {files.map((att) => (
                       <div key={att.id} className="attachment-card">
                         <div className="attachment-file-icon">
-                          <FileText size={28} />
+                          <FileText size={hasText || files.length > 1 ? 20 : 28} />
                         </div>
                         <span className="attachment-file-name">{att.name}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Text bubble - only if text exists */}
+                {hasText && (
+                  <div className={`chat-bubble chat-bubble--${msg.role}`}>
+                    {msg.text}
                   </div>
                 )}
               </div>
@@ -152,7 +152,7 @@ export function ChatInterface() {
           onKeyDown={handleKeyDown}
           placeholder="Skriv en melding..."
         />
-        <button onClick={handleSend}><Send size={18} /></button>
+        <button onClick={handleSend}><ArrowUp size={18} /></button>
       </div>
     </div>
   );

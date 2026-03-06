@@ -6,8 +6,10 @@
   --hover-dark: #1d1d1d;
   --separator-dark: #3d3d3d81;
   --text-dark: #1a1a1a;
+  --text-light: #ffffff;
   --icon-dark: #1a1a1a;
   --text-input-area: #ffffff;
+  --file-attachments: #3d3d3d;
 }
 
 .app {

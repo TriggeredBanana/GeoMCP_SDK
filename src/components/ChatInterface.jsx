@@ -88,7 +88,7 @@ export function ChatInterface() {
                         {files.map((att) => (
                           <div key={att.id} className="attachment-card">
                             <div className="attachment-file-icon">
-                              <FileText size={hasText || files.length > 1 ? 20 : 28} />
+                              <FileText size={26} />
                             </div>
                             <span className="attachment-file-name">{att.name}</span>
                           </div>

@@ -2,11 +2,9 @@ import os
 import asyncio
 import logging
 from psycopg_pool import AsyncConnectionPool
-from dotenv import load_dotenv
+from config import DATABASE_URL
 from psycopg.rows import dict_row
 
-load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
 DB_RETRY_ATTEMPTS = 3
 
 logger = logging.getLogger(__name__)

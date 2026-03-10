@@ -2,7 +2,6 @@ import os
 from contextlib import asynccontextmanager
 import asyncio
 from dotenv import load_dotenv
-from urllib3 import request
 load_dotenv()
 
 from config import ALLOWED_ORIGINS, DEMO_MODE

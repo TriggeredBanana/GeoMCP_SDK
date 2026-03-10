@@ -15,59 +15,54 @@ export function ChatInterface() {
   }, [messages]);
 
 
-  function handleSend() {
+  async function handleSend() {
     const trimmed = input.trim();
     if (!trimmed && attachments.length === 0) return;
-    setMessages((prev) => [...prev, { role: 'user', text: trimmed, attachments: [...attachments] }]);
-    setInput('');
-    setAttachments([]);
-  }
 
-  const userMessage = {
-    role: "user",
-    text: trimmed,
-    attachments: [...attachments]
-  };
-
-  setMessages((prev) => [...prev, userMessage]);
-  setInput("");
-  setAttachments([]);
-
-  try {
-
-    const res = await fetch("http://localhost:8000/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        message: trimmed,
-        session_id: sessionId,
-        document: selectedDocument || null, 
-      })
-    });
-
-    const data = await res.json();
-
-    setSessionId(data.session_id);
-
-    const aiMessage = {
-      role: "assistant",
-      text: data.reply,
-      attachments: []
+    const userMessage = {
+      role: "user",
+      text: trimmed,
+      attachments: [...attachments]
     };
 
-    setMessages((prev) => [...prev, aiMessage]);
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setAttachments([]);
 
-  } catch (err) {
-    console.error("Chat error:", err);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: trimmed,
+          session_id: sessionId,
+          document: selectedDocument || null,
+        })
+      });
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "assistant", text: "Kunne ikke kontakte serveren.", attachments: [] }
-    ]);
+      const data = await res.json();
+      setSessionId(data.session_id);
+
+      const aiMessage = {
+        role: "assistant",
+        text: data.reply,
+        attachments: []
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+
+    } catch (err) {
+      console.error("Chat error:", err);
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: "Kunne ikke kontakte serveren.", attachments: [] }
+      ]);
+    }
   }
-}
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();

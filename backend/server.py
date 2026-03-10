@@ -4,7 +4,7 @@ import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
-from config import ALLOWED_ORIGINS, DEMO_MODE
+from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -131,3 +131,7 @@ async def test_db():
     result = await query("SELECT * FROM kulturmiljoer.kommunenummer LIMIT 5")
     return {"data": result} # Endpoint to test database connection and query execution.
 # TESTING END
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("server:app", host=HOST, port=PORT, reload=True)

@@ -22,7 +22,7 @@ async def handle_list_kommuner(invocation):
             "SELECT identifier, description FROM kulturmiljoer.kommunenummer ORDER BY identifier ASC"
         )
     return {
-        "textResultForLlm": str(result),
+        "textResultForLlm": json.dumps(result, ensure_ascii=False, default=str),
         "resultType": "success"
     }
     
@@ -47,7 +47,7 @@ async def handle_list_vernetyper(invocation):
         "SELECT identifier, description FROM kulturmiljoer.vernetype ORDER BY identifier ASC"
     )
     return {
-        "textResultForLlm": str(result),
+        "textResultForLlm": json.dumps(result, ensure_ascii=False, default=str),
         "resultType": "success"
     }
     

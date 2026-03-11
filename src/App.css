@@ -3,7 +3,6 @@
   --secondary-color:  #1E9D63;
   --bg:               #202020;
   --soft-bg:          rgba(255, 255, 255, 0.08);
-  --separator:        #3d3d3d81;
   --text:             #1a1a1a;
   --text-mute:        rgba(255, 255, 255, 0.65);
   --hover-text:       #fff;
@@ -18,7 +17,6 @@
 [data-theme="light"] {
   --bg:               #f1f1f1;
   --soft-bg:          rgba(204, 204, 204, 0.803);
-  --separator:        rgba(80, 78, 78, 0.66);
   --text:             #fff;
   --text-mute:        rgba(94, 94, 94, 0.9);
   --hover-text:       #1a1a1a;
@@ -291,7 +289,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem;
-  border-top: 0.1px solid var(--separator-dark);
+  border-top: 0.1px solid var(--border);
   background: var(--bg);
 }
 
@@ -404,7 +402,7 @@
   color: var(--text-mute);
   letter-spacing: 2px;
   font-weight: 600;
-  border-bottom: 1px solid var(--separator-dark);
+  border-bottom: 1px solid var(--border);
 }
 
 .map-layers-list {
@@ -478,7 +476,7 @@
   display: flex;
   gap: 8px;
   padding: 8px 12px;
-  border-top: 0.1px solid var(--separator);
+  border-top: 0.1px solid var(--border);
   overflow-x: auto;
   background: var(--bg);
 }

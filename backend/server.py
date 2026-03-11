@@ -1,9 +1,4 @@
-import os
 from contextlib import asynccontextmanager
-import asyncio
-from dotenv import load_dotenv
-load_dotenv()
-
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

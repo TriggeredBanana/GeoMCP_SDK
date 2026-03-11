@@ -4,15 +4,11 @@ import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import logging
-from dotenv import load_dotenv 
 from contextlib import asynccontextmanager
 from fastmcp import FastMCP
 from db import init_db_pool, close_pool, get_connection
+from config import MCP_TRANSPORT, MCP_PORT
 
-
-load_dotenv()
-MCP_TRANSPORT = os.getenv("MCP_TRANSPORT")
-MCP_PORT = int(os.getenv("MCP_PORT"))
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -106,6 +102,12 @@ async def buffer_zone(site_name: str, buffer_radius:float) -> str:
     except Exception as e:
         logger.error(f"failed to create buffer zone: {e}")
         return f"Error creating buffer zone: {e}"
+
+    @vector_mcp.tool()
+    async def intersection() -> str:
+        """
+        Checks if a given point or polygon intersects with any world heritage site, buffer zone or other polygon or sites of interest. Returns 
+        """
 
 
 

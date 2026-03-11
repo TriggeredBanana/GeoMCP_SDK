@@ -46,6 +46,14 @@ function App() {
     type: 'tile',
     url: 'https://cache.kartverket.no/v1/wmts/1.0.0/sjokartraster/default/webmercator/{z}/{y}/{x}.png',
     visible: false,
+  },
+  {
+    id: 'ortofoto',
+    name: 'Ortofoto / Satelitt',
+    type: 'tile',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    visible: false,
+    attribution: '© Esri, Maxar, Earthstar Geographics',
   }
   ]);
 

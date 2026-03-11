@@ -1,7 +1,5 @@
-    import { useState } from "react";
     import { MapContainer, TileLayer, WMSTileLayer, GeoJSON, Marker, Popup } from "react-leaflet";
-    import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-    import { faLayerGroup } from '@fortawesome/free-solid-svg-icons';
+    import { BaseMapSwitcher } from "./MapLayers";
 
     const NORWAY_BOUNDS = [
         [57.0, 3.0],   // southwest corner 
@@ -10,7 +8,6 @@
 
     function Map({ layers, onToggleLayer }) {
         const center = [58.1467, 7.9956];
-        const [layersPanelOpen, setLayersPanelOpen] = useState(false);
 
         return (
             <div className="map-root">
@@ -27,7 +24,7 @@
                     .filter(layer => layer.visible)
                     .map(layer => {
                         if (layer.type === "tile") {
-                            return <TileLayer key={layer.id} url={layer.url} attribution='© <a href="https://kartverket.no">Kartverket</a>' />;
+                            return <TileLayer key={layer.id} url={layer.url} attribution={layer.attribution || '© <a href="https://kartverket.no">Kartverket</a>'} />;
                         } 
                         if (layer.type === "wms") {
                             return (<WMSTileLayer key={layer.id} url={layer.url} layers="Nibcache_UTM33_EUREF89" version="1.1.1" format="image/jpeg" attribution='© <a href="https://kartverket.no">Kartverket</a>' />);
@@ -43,36 +40,7 @@
                     </Marker>
                 </MapContainer>
 
-                <div className="map-layers-overlay">
-                    <button
-                        className={`map-layers-toggle ${layersPanelOpen ? 'active' : ''}`}
-                        onClick={() => setLayersPanelOpen(prev => !prev)}
-                        title="Kartlag"
-                    >
-                        <FontAwesomeIcon icon={faLayerGroup} />
-                    </button>
-
-                    {layersPanelOpen && (
-                        <div className="map-layers-dropdown">
-                            <div className="map-layers-header">Kartlag</div>
-                            <ul className="map-layers-list">
-                                {layers.map(layer => (
-                                    <li key={layer.id} className="map-layers-item">
-                                        <label
-                                            className="map-layers-label"
-                                            onClick={() => onToggleLayer(layer.id)}
-                                        >
-                                            <span className="map-layers-name">{layer.name}</span>
-                                            <div className={`map-layers-radio ${layer.visible ? 'active' : ''}`}>
-                                                <div className="map-layers-radio-dot" />
-                                            </div>
-                                        </label>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                </div>
+                <BaseMapSwitcher layers={layers} onToggleLayer={onToggleLayer} />
             </div>
         );
     }

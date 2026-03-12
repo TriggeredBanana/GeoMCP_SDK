@@ -2,6 +2,13 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faEye, faEyeSlash, faTrash, faDownload } from '@fortawesome/free-solid-svg-icons';
 
 export function KartlagPanel({ drawnLayers = [], onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer }) {
+    function toFeatureCollection(layer) {
+        return {
+            ...layer.geoJson,
+            properties: { ...layer.geoJson.properties, name: layer.name }
+        };
+    }
+
     function downloadGeoJson(data, filename) {
         const blob = new Blob(
             [JSON.stringify(data, null, 2)],
@@ -29,8 +36,8 @@ export function KartlagPanel({ drawnLayers = [], onSetDrawnLayerVisible, onRemov
 
         downloadGeoJson(
             {
-                ...layer.geoJson,
-                properties: { ...layer.geoJson.properties, name: layer.name }
+                type: 'FeatureCollection',
+                features: [toFeatureCollection(layer)]
             },
             getLayerFilename(layer.name)
         );
@@ -41,10 +48,7 @@ export function KartlagPanel({ drawnLayers = [], onSetDrawnLayerVisible, onRemov
             type: 'FeatureCollection',
             features: drawnLayers
                 .filter(l => l.geoJson)
-                .map(l => ({
-                    ...l.geoJson,
-                    properties: { ...l.geoJson.properties, name: l.name }
-                }))
+                .map(toFeatureCollection)
         };
 
         downloadGeoJson(featureCollection, 'tegninger.geojson');

@@ -25,7 +25,6 @@ from starlette.middleware import Middleware
 from starlette.routing import Mount, Route
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from pydantic import BaseModel
 
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT, list_documents
 from copilot import CopilotClient
@@ -59,6 +58,8 @@ async def lifespan(app):
 async def chat(request: Request):
     data = await request.json()
     message = data.get("message")
+    if not message:
+        return JSONResponse({"error": "'message' is required."}, status_code=400)
     session_id = data.get("session_id")
     session_id, session = await manager.get_or_create(session_id)
     reply = await manager.send_message(session_id, message)
@@ -84,7 +85,7 @@ async def test_db(request: Request):
 
 
 
-# Assemble the Startlette application
+# Assemble the Starlette application
 app = Starlette(
     routes=[
         # MCP servers — each accessible at /mcp/<name>/mcp

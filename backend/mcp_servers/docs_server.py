@@ -22,7 +22,7 @@ async def list_documents() -> str:
     List alle tilgjengelige PDF-dokumenter i Azure Blob Storage.
     Kall dette verktøyet først for å se hvilke dokumenter som er tilgjengelige.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     docs = await loop.run_in_executor(None, _list_documents)
     return json.dumps(docs, ensure_ascii=False)
 
@@ -39,7 +39,7 @@ async def fetch_document(name: str) -> str:
     if not name:
         return json.dumps({"error": "Mangler dokumentnavn."})
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         text = await loop.run_in_executor(None, _fetch_document, name)
         return json.dumps({"name": name, "content": text}, ensure_ascii=False)
     except Exception as exc:

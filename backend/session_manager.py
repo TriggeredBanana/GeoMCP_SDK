@@ -1,8 +1,11 @@
 import asyncio
+import os
 import uuid
 from datetime import datetime, timedelta
 from copilot import CopilotClient, PermissionHandler
 from config import DEMO_MODE, MODEL_NAME, SYSTEM_PROMPT, SESSION_TIMEOUT_MINUTES
+
+SERVER_BASE_URL = os.getenv("SERVER_BASE_URL", "http://localhost:8000")
 
 
 def strict_permission_handler(*_args, **_kwargs):
@@ -45,17 +48,17 @@ class SessionManager:
             "mcp_servers": {
                 "database": {
                     "type": "http",
-                    "url": "http://localhost:8000/mcp/db/mcp", # Placeholder
+                    "url": f"{SERVER_BASE_URL}/mcp/db/mcp",
                     "tools": ["*"],
                 },
                 "geo": {
                     "type": "http",
-                    "url": "http://localhost:8000/mcp/geo/mcp",# Placeholder
+                    "url": f"{SERVER_BASE_URL}/mcp/geo/mcp",
                     "tools": ["*"],
                 },
                 "docs": {
                     "type": "http",
-                    "url": "http://localhost:8000/mcp/docs/mcp", # Placeholder
+                    "url": f"{SERVER_BASE_URL}/mcp/docs/mcp",
                     "tools": ["*"],
                 },
             },

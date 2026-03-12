@@ -6,45 +6,29 @@ Tools:
 """
 
 import json
-import os
 
-import asyncpg
-from dotenv import load_dotenv
 from fastmcp import FastMCP
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
+from db import query
 
 
 # Create the FastMCP server based on the FastMCP V2 framework.
-
 mcp = FastMCP("db_fast_server")
-
-
-async def get_connection() -> asyncpg.Connection:
-    """Open a new SSL-secured connection to the Azure PostgreSQL database."""
-    return await asyncpg.connect(DATABASE_URL, ssl="require")
 
 
 @mcp.tool
 async def list_tables() -> str:
     """
-    List all available tables and their schemas in the databse.
+    List all available tables and their schemas in the database.
     Call this first to discover what data is available.
     """
-    conn = await get_connection()
-    try:
-        rows = await conn.fetch("""
-            SELECT table_schema, table_name
-            FROM information_schema.tables
-            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-            ORDER BY table_schema, table_name
-        """)
-        tables = [{"schema": r["table_schema"], "table": r["table_name"]} for r in rows]
-        return json.dumps(tables, indent=2)
-    finally:
-        await conn.close()
+    rows = await query("""
+        SELECT table_schema, table_name
+        FROM information_schema.tables
+        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY table_schema, table_name
+    """)
+    tables = [{"schema": r["table_schema"], "table": r["table_name"]} for r in rows]
+    return json.dumps(tables, indent=2)
 
 
 @mcp.tool
@@ -57,21 +41,17 @@ async def describe_table(schema: str, table: str) -> str:
         schema: The schema name (e.g. 'kulturmiljoer' or 'public').
         table:  The table name (e.g. 'kulturmiljo').
     """
-    conn = await get_connection()
-    try:
-        rows = await conn.fetch("""
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_schema = $1 AND table_name = $2
-            ORDER BY ordinal_position
-        """, schema, table)
-        columns = [
-            {"column": r["column_name"], "type": r["data_type"], "nullable": r["is_nullable"]}
-            for r in rows
-        ]
-        return json.dumps(columns, indent=2)
-    finally:
-        await conn.close()
+    rows = await query("""
+        SELECT column_name, data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = %s AND table_name = %s
+        ORDER BY ordinal_position
+    """, (schema, table))
+    columns = [
+        {"column": r["column_name"], "type": r["data_type"], "nullable": r["is_nullable"]}
+        for r in rows
+    ]
+    return json.dumps(columns, indent=2)
 
 
 @mcp.tool
@@ -85,12 +65,7 @@ async def query_database(sql: str) -> str:
     """
     if not sql.strip().upper().startswith("SELECT"):
         return json.dumps({"error": "Only SELECT queries are allowed."})
-    conn = await get_connection()
-    try:
-        rows = await conn.fetch(sql)
-        result = [dict(r) for r in rows]
-        return json.dumps(result, indent=2, default=str)
-    finally:
-        await conn.close()
+    rows = await query(sql)
+    return json.dumps(rows, indent=2, default=str)
 
 db_app = mcp.http_app(path="/mcp")

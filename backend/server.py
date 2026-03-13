@@ -29,7 +29,7 @@ from starlette.responses import JSONResponse
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT, list_documents
 from copilot import CopilotClient
 from session_manager import SessionManager
-from db import connect_db, disconnect_db, query
+from db import init_db_pool, close_pool, query
 
 # Import the three MCP ASGI apps
 from mcp_servers.db_server import db_app
@@ -49,10 +49,10 @@ async def lifespan(app):
         async with geo_app.lifespan(app):
             async with docs_app.lifespan(app):
                 await client.start()
-                await connect_db()
+                await init_db_pool()
                 yield
                 await client.stop()
-                await disconnect_db()
+                await close_pool()
 
 # REST endpoint handlers
 async def chat(request: Request):

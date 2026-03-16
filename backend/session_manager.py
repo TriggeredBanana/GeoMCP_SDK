@@ -81,11 +81,8 @@ class SessionManager:
         self.history[session_id].append({"role": "user", "content": message})
         response = await session.send_and_wait({"prompt": message}, timeout=180)
     
-        self.token_usage[session_id]["input"] += response.data.input_tokens or 0
         self.token_usage[session_id]["output"] += response.data.output_tokens or 0
-        self.token_usage[session_id]["premium_requests"] += response.data.total_premium_requests or 0
-        print(f"Session tokens — in: {self.token_usage[session_id]['input']} out: {self.token_usage[session_id]['output']} premium: {self.token_usage[session_id]['premium_requests']}")
-    
+        print(f"Session tokens — out: {self.token_usage[session_id]['output']}")
         content = response.data.content
         self.history[session_id].append({"role": "assistant", "content": content})
         return content
@@ -102,6 +99,5 @@ class SessionManager:
             del self.last_active[sid]
             del self.history[sid]
             del self.token_usage[sid]
-
     def get_history(self, session_id):
         return self.history.get(session_id, [])

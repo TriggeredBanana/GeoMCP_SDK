@@ -1,11 +1,12 @@
 import { ChatInterface } from './ChatInterface';
 import { KartlagPanel } from './KartlagPanel';
+import { ExportPanel } from './ExportPanel';
 
 const PANEL_COMPONENTS = {
     'Chatbot': ChatInterface,
     'Kartlag': KartlagPanel,
     'Analyse': () => <h2>Analyse</h2>, // Replace with real component later
-    'Eksporter': () => <h2>Eksporter</h2> // Replace with real component later
+    'Eksporter': ExportPanel,
 };
 
 export function ContentPanel({ activePanel, onClose, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer }) {

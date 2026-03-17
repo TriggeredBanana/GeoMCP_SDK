@@ -1,4 +1,4 @@
-    import { useEffect } from "react";
+    import { useEffect, useEffectEvent } from "react";
     import { MapContainer, TileLayer, WMSTileLayer, GeoJSON, useMap } from "react-leaflet";
     import { BaseMapSwitcher } from "./MapLayers";
     import L from "leaflet";
@@ -42,6 +42,7 @@
 
     function FlyToController({ drawnLayers, flyTarget, onFlyDone }) {
         const map = useMap();
+        const handleFlyDone = useEffectEvent(onFlyDone);
 
         useEffect(() => {
             if (!flyTarget) return;
@@ -53,15 +54,15 @@
                 if (bounds.isValid()) {
                     map.flyToBounds(bounds, { padding: [25, 25], maxZoom: 10 });
                 }
-                onFlyDone();
+                handleFlyDone();
             }, 50);
             return () => clearTimeout(t);
-        }, [flyTarget]);
+        }, [drawnLayers, flyTarget, map]);
 
         return null;
     }
 
-    function Map({ layers, onToggleLayer, drawnLayers, onLayerCreated, onLayerRemoved, flyTarget, onFlyDone }) {
+    function Map({ layers, onToggleLayer, drawnLayers, onLayerCreated, onLayerUpdated, onLayerRemoved, flyTarget, onFlyDone }) {
         const center = [65.0, 15.0];
 
         return (
@@ -79,6 +80,7 @@
                     <DrawToolBar
                         drawnLayers={drawnLayers}
                         onLayerCreated={onLayerCreated}
+                        onLayerUpdated={onLayerUpdated}
                         onLayerRemoved={onLayerRemoved}
                     />
                     {layers

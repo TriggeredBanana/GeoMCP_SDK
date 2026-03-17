@@ -6,7 +6,7 @@ import { ExportPanel } from './ExportPanel';
 const PANEL_COMPONENTS = {
     'Chatbot': ChatInterface,
     'Kartlag': KartlagPanel,
-    'Analyse': () => <h2>Analyse</h2>, // Replace with real component later
+    'Analyse': Analysis,
     'Eksporter': ExportPanel,
 };
 

@@ -50,7 +50,9 @@ async def lifespan(app):
             async with docs_app.lifespan(app):
                 await client.start()
                 await connect_db()
+                manager.start_cleanup_loop()
                 yield
+                manager.stop_cleanup_loop()
                 await client.stop()
                 await disconnect_db()
 
@@ -61,7 +63,10 @@ async def chat(request: Request):
     if not message:
         return JSONResponse({"error": "'message' is required."}, status_code=400)
     session_id = data.get("session_id")
-    session_id, session = await manager.get_or_create(session_id)
+    try:
+        session_id, session = await manager.get_or_create(session_id)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
     reply = await manager.send_message(session_id, message)
     return JSONResponse({"reply": reply, "session_id": session_id})
 

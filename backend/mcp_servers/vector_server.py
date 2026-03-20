@@ -131,8 +131,8 @@ async def get_coordinates(geojson: str) -> str:
                     (geojson,)
                 )
                 row = await cur.fetchone()
-                if not row or not row["geojson_out"]:   
-                    return {"could not get coordinates"}
+                if not row or not row["geojson_out"]:
+                    return "Could not get coordinates."
                 geometry = json.loads(row["geojson_out"])
                 return json.dumps({"type": geometry["type"], "coordinates": geometry["coordinates"]}, ensure_ascii=False)
     except Exception as e:
@@ -171,16 +171,15 @@ async def point_in_polygon(points_geojson: str, polygon_geojson: str) -> str:
                     row = await cur.fetchone()
                     if row and row["is_inside"]:
                         results.append(feature)
-        if not results:
-            return json.dumps({
-                "status": "success",
-                "message": "No points found inside the polygon.",
-                "num_points": 0,
-                "points_inside": []
-            }, ensure_ascii=False)
+        return json.dumps({
+            "status": "success",
+            "message": f"{len(results)} point(s) found inside the polygon." if results else "No points found inside the polygon.",
+            "num_points": len(results),
+            "points_inside": results
+        }, ensure_ascii=False)
     except Exception as e:
         logger.error(f"Error in point_in_polygon: {e}")
-        return {"error": str(e)}
+        return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
 
 # ---------------------------------------------------------------------------
 # Database tools — custom tools

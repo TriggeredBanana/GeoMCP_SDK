@@ -1,4 +1,3 @@
-import os
 import asyncio
 import logging
 from psycopg_pool import AsyncConnectionPool

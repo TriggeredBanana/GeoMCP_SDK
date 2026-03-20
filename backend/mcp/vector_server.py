@@ -297,12 +297,6 @@ async def get_verdensarv_sites() -> str:
         logger.error(f"Failed to fetch world heritage sites: {e}")
         return f"Error fetching world heritage sites: {e}"
 
-    @vector_mcp.tool()
-    async def intersection() -> str:
-        """
-        Checks if a given point or polygon intersects with any world heritage site, buffer zone or other polygon or sites of interest. Returns 
-        """
-
 
 if __name__ == "__main__":
     from fastmcp.server.server import Transport

@@ -44,6 +44,7 @@ class SessionManager:
             #   - db:   raw SQL tools for exploring and querying the database
             #   - geo_server:  domain-specific geo/KU tools (buffer search, kommuner etc.)
             #   - docs_server: Azure Blob document tools (list + fetch PDFs)
+            #   - vector_server: Vector-based spatial analysis tools (buffer, intersection)
             # Add new MCP servers here as you build them.
             "mcp_servers": {
                 "database": {
@@ -59,6 +60,11 @@ class SessionManager:
                 "docs": {
                     "type": "http",
                     "url": f"{SERVER_BASE_URL}/mcp/docs/mcp",
+                    "tools": ["*"],
+                },
+                "vector": {
+                    "type": "http",
+                    "url": f"{SERVER_BASE_URL}/mcp/vector/mcp",
                     "tools": ["*"],
                 },
             },

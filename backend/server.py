@@ -35,6 +35,7 @@ from db import init_db_pool, close_pool, query
 from mcp_servers.db_server import db_app
 from mcp_servers.geo_server import geo_app
 from mcp_servers.docs_server import docs_app
+from mcp_servers.vector_server import vector_app
 
 # Copilot client and session manager initialization.
 client = CopilotClient()
@@ -48,11 +49,13 @@ async def lifespan(app):
     async with db_app.lifespan(app):
         async with geo_app.lifespan(app):
             async with docs_app.lifespan(app):
-                await client.start()
-                await init_db_pool()
-                yield
-                await client.stop()
-                await close_pool()
+                async with vector_app.lifespan(app):
+                    await client.start()
+                    await init_db_pool()
+                    yield
+                    await client.stop()
+                    await close_pool()
+
 
 # REST endpoint handlers
 async def chat(request: Request):
@@ -92,6 +95,7 @@ app = Starlette(
         Mount("/mcp/db",   app=db_app),
         Mount("/mcp/geo",  app=geo_app),
         Mount("/mcp/docs", app=docs_app),
+        Mount("/mcp/vector", app=vector_app), 
 
         # Existing REST API
         Route("/api/chat",                  endpoint=chat,          methods=["POST"]),

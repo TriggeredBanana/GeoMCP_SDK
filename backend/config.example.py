@@ -17,6 +17,8 @@ MODEL_NAME = os.getenv("MODEL_NAME", "your-model-name-here")
 
 # Session management configuration
 SESSION_TIMEOUT_MINUTES = int(os.getenv("SESSION_TIMEOUT_MINUTES", "15"))
+MAX_SESSIONS = int(os.getenv("MAX_SESSIONS", "100"))
+MAX_HISTORY_PER_SESSION = int(os.getenv("MAX_HISTORY_PER_SESSION", "200"))
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in ("1", "true", "yes", "on")
 
 # Buffer search hardening
@@ -25,10 +27,9 @@ BUFFER_DISTANCE_MAX_METERS = int(os.getenv("BUFFER_DISTANCE_MAX_METERS", "50000"
 BUFFER_RESULT_LIMIT = int(os.getenv("BUFFER_RESULT_LIMIT", "200"))
 
 # System prompt configuration - define the behavior of the AI assistant
-# REASONING_EFFORT = os.getenv("REASONING_EFFORT", "medium")
-# SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", """
- #Your system prompt here.
- #""".strip())
+SYSTEM_PROMPT = """
+Your system prompt here.
+""".strip()
 
 # Azure Blob Storage configuration
 AZURE_CONNECTION_STRING = os.getenv("AZURE_CONNECTION_STRING")

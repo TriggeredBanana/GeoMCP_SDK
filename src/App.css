@@ -15,6 +15,7 @@
   --chat-empty:       #666;
   --menus:            #dddddde0;
   --menu-active:      rgba(38, 190, 118, 0.12);
+  --pm-icon-filter:   brightness(0) invert(1);
 
 }
 
@@ -33,6 +34,7 @@
   --file-icon:        #6d6b6b;
   --menus:            #202020;
   --menu-active:      rgba(31, 201, 122, 0.316);
+  --pm-icon-filter:   brightness(0) opacity(0.75);
 }
 .app {
   /* App styles here */
@@ -367,11 +369,144 @@
 }
 
 .leaflet-pm-toolbar .leaflet-pm-icon-locate-user {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%235B5B5B' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='3.5'/%3E%3Cpath d='M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='3.5'/%3E%3Cpath d='M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .leaflet-pm-toolbar .leaflet-pm-icon-locate-delete {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%235B5B5B' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Cpath d='M4 7h16M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 13h10l1-13'/%3E%3C/g%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'%3E%3Cpath d='M4 7h16M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 13h10l1-13'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Override built-in geoman icons: white stroke, transparent background */
+.leaflet-pm-toolbar .leaflet-pm-icon-marker {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M12 2C8.69 2 6 4.69 6 8c0 4.5 6 12 6 12s6-7.5 6-12c0-3.31-2.69-6-6-6z'/><circle fill='none' stroke='%23ffffff' stroke-width='2' cx='12' cy='8' r='2'/></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-polyline {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polyline fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' points='3,18 8,9 15,14 21,6'/></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-rectangle {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' x='4' y='5' width='16' height='14' rx='1.5'/></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-polygon {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polygon fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' points='12,3 20,7.5 20,16.5 12,21 4,16.5 4,7.5'/></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-circle {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-width='2'><circle cx='12' cy='12' r='8'/><line x1='12' y1='12' x2='20' y2='12'/></g></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-edit {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z'/></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-drag {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M12 3v18M3 12h18'/></g></svg>");
+}
+
+.leaflet-pm-toolbar .leaflet-pm-icon-delete {
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><g fill='none' stroke='%23ffffff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'><path d='M20 20H7L3 16l9-9 8 8-2.5 2.5'/><path d='M6.5 17.5l5-5'/></g></svg>");
+}
+
+/* ─── Leaflet PM Toolbar: match layer-toggle button styling ─── */
+.leaflet-pm-toolbar.leaflet-bar {
+  background: var(--bg) !important;
+  border: 1px solid var(--soft-bg) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35) !important;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.leaflet-pm-toolbar.leaflet-bar:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-pm-toolbar a.leaflet-buttons-control-button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--soft-bg) !important;
+  width: 29px !important;
+  height: 29px !important;
+  transition: background 0.15s;
+}
+
+.leaflet-pm-toolbar .button-container:first-child a.leaflet-buttons-control-button {
+  border-top-left-radius: 9px !important;
+  border-top-right-radius: 9px !important;
+}
+
+.leaflet-pm-toolbar .button-container:last-child a.leaflet-buttons-control-button {
+  border-bottom: none !important;
+  border-bottom-left-radius: 9px !important;
+  border-bottom-right-radius: 9px !important;
+}
+
+.leaflet-pm-toolbar a.leaflet-buttons-control-button:hover {
+  background: var(--soft-bg) !important;
+}
+
+.leaflet-pm-toolbar .button-container.active a.leaflet-buttons-control-button {
+  background: var(--menu-active) !important;
+  box-shadow: inset 0 0 0 2px var(--primary-color) !important;
+}
+
+.leaflet-pm-toolbar .button-container.active .control-icon {
+  filter: brightness(0) saturate(100%) invert(60%) sepia(72%) saturate(439%) hue-rotate(110deg) brightness(88%) !important;
+}
+
+/* Locate button: active while the position marker is live */
+.leaflet-pm-toolbar .button-container:has(.leaflet-pm-icon-locate-delete) a.leaflet-buttons-control-button {
+  background: var(--menu-active) !important;
+  box-shadow: inset 0 0 0 2px var(--primary-color) !important;
+}
+
+.leaflet-pm-toolbar .button-container:has(.leaflet-pm-icon-locate-delete) .control-icon {
+  filter: brightness(0) saturate(100%) invert(60%) sepia(72%) saturate(439%) hue-rotate(110deg) brightness(88%) !important;
+}
+
+.leaflet-pm-toolbar .control-icon {
+  filter: var(--pm-icon-filter) !important;
+}
+
+/* ─── Leaflet Zoom Control: match layer-toggle button styling ─── */
+.leaflet-control-zoom.leaflet-bar {
+  background: var(--bg) !important;
+  border: 1px solid var(--soft-bg) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35) !important;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.leaflet-control-zoom.leaflet-bar:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.leaflet-control-zoom a.leaflet-control-zoom-in,
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+  background: transparent !important;
+  border-bottom: 1px solid var(--soft-bg) !important;
+  color: var(--hover-text) !important;
+  width: 29px !important;
+  height: 29px !important;
+  line-height: 29px !important;
+  font-size: 20px !important;
+  transition: background 0.15s;
+}
+
+.leaflet-control-zoom a.leaflet-control-zoom-out {
+  border-bottom: none !important;
+}
+
+.leaflet-control-zoom a.leaflet-control-zoom-in:hover,
+.leaflet-control-zoom a.leaflet-control-zoom-out:hover {
+  background: var(--soft-bg) !important;
+}
+
+.leaflet-control-zoom a.leaflet-disabled {
+  color: var(--soft-bg) !important;
+  cursor: not-allowed !important;
 }
 
 /* Map Layers Overlay */
@@ -399,13 +534,11 @@
   justify-content: center;
   font-size: clamp(0.9rem, 1.2vw, 1.15rem);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
-  transition: background 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
 
 .map-layers-toggle:hover {
-  background: var(--bg);
   color: var(--hover-text);
-  transform: scale(1.06);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 

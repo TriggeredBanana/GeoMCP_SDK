@@ -62,3 +62,13 @@ async def query(sql, params=None):
             await cur.execute(sql, params)
             return await cur.fetchall()
 
+async def execute(sql, params=None):
+    """Run a write query (INSERT/UPDATE/DELETE) and return the number of affected rows."""
+    if _pool is None:
+        raise RuntimeError("pool is not initialized.")
+    async with _pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(sql, params)
+            await conn.commit()
+            return cur.rowcount
+

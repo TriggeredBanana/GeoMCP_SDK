@@ -1,7 +1,7 @@
 """
 Main Starlette application.
 
-Mounts three MCP servers alongside the existing REST API:
+Mounts MCP servers alongside the existing REST API:
 
   /mcp/db/mcp    — Database tools  (list_tables, describe_table, query_database)
   /mcp/geo/mcp   — Geo tools       (list_kommuner, list_vernetyper, buffer_search)
@@ -36,6 +36,7 @@ from mcp_servers.db_server import db_app
 from mcp_servers.geo_server import geo_app
 from mcp_servers.docs_server import docs_app
 from mcp_servers.vector_server import vector_app
+from mcp_servers.search_server import search_app
 
 # Copilot client and session manager initialization.
 client = CopilotClient()
@@ -50,13 +51,14 @@ async def lifespan(app):
         async with geo_app.lifespan(app):
             async with docs_app.lifespan(app):
                 async with vector_app.lifespan(app):
-                    await init_db_pool()
-                    await client.start()
-                    manager.start_cleanup_loop()
-                    yield
-                    manager.stop_cleanup_loop()
-                    await client.stop()
-                    await close_pool()
+                    async with search_app.lifespan(app):
+                        await init_db_pool()
+                        await client.start()
+                        manager.start_cleanup_loop()
+                        yield
+                        manager.stop_cleanup_loop()
+                        await client.stop()
+                        await close_pool()
 
 
 # REST endpoint handlers
@@ -92,6 +94,22 @@ async def test_db(request: Request):
     return JSONResponse({"data": result})
 
 
+async def test_search(request: Request):
+    """Quick REST endpoint to test document search without MCP protocol."""
+    q = request.query_params.get("q", "")
+    if not q:
+        return JSONResponse({"error": "Bruk ?q=søkeord"}, status_code=400)
+    from search_service import search_full_text, search_fuzzy, hybrid_search
+    mode = request.query_params.get("mode", "fulltext")
+    if mode == "fuzzy":
+        results = await search_fuzzy(q)
+    elif mode == "hybrid":
+        results = await hybrid_search(q)
+    else:
+        results = await search_full_text(q)
+    return JSONResponse({"query": q, "mode": mode, "count": len(results), "results": results})
+
+
 
 # Assemble the Starlette application
 app = Starlette(
@@ -100,13 +118,15 @@ app = Starlette(
         Mount("/mcp/db",   app=db_app),
         Mount("/mcp/geo",  app=geo_app),
         Mount("/mcp/docs", app=docs_app),
-        Mount("/mcp/vector", app=vector_app), 
+        Mount("/mcp/vector", app=vector_app),
+        Mount("/mcp/search", app=search_app),
 
         # Existing REST API
         Route("/api/chat",                  endpoint=chat,          methods=["POST"]),
         Route("/api/documents",             endpoint=get_documents, methods=["GET"]),
         Route("/api/history/{session_id}",  endpoint=get_history,   methods=["GET"]),
         Route("/api/test-db",               endpoint=test_db,       methods=["GET"]),
+        Route("/api/search",                endpoint=test_search,   methods=["GET"]),
     ],
     middleware=[
         Middleware(

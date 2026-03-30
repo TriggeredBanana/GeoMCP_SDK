@@ -31,11 +31,12 @@ from copilot import CopilotClient
 from session_manager import SessionManager
 from db import init_db_pool, close_pool, query
 
-# Import the three MCP ASGI apps
+# Import the MCP ASGI apps
 from mcp_servers.db_server import db_app
 from mcp_servers.geo_server import geo_app
 from mcp_servers.docs_server import docs_app
 from mcp_servers.vector_server import vector_app
+from mcp_servers.map_server import map_app
 
 # Copilot client and session manager initialization.
 client = CopilotClient()
@@ -46,23 +47,25 @@ manager = SessionManager(client)
 # Lifespan, start and stop in the right order.
 @asynccontextmanager
 async def lifespan(app):
-    async with db_app.lifespan(app):
-        async with geo_app.lifespan(app):
-            async with docs_app.lifespan(app):
-                async with vector_app.lifespan(app):
-                    await init_db_pool()
-                    await client.start()
-                    manager.start_cleanup_loop()
-                    yield
-                    manager.stop_cleanup_loop()
-                    await client.stop()
-                    await close_pool()
+    async with map_app.lifespan(app):
+        async with db_app.lifespan(app):
+            async with geo_app.lifespan(app):
+                async with docs_app.lifespan(app):
+                    async with vector_app.lifespan(app):
+                        await init_db_pool()
+                        await client.start()
+                        manager.start_cleanup_loop()
+                        yield
+                        manager.stop_cleanup_loop()
+                        await client.stop()
+                        await close_pool()
 
 
 # REST endpoint handlers
 async def chat(request: Request):
     data = await request.json()
     message = data.get("message")
+    map_context = data.get("map_context")
     if not message:
         return JSONResponse({"error": "'message' is required."}, status_code=400)
     session_id = data.get("session_id")
@@ -70,8 +73,12 @@ async def chat(request: Request):
         session_id, session = await manager.get_or_create(session_id)
     except RuntimeError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
-    reply = await manager.send_message(session_id, message)
-    return JSONResponse({"reply": reply, "session_id": session_id})
+    result = await manager.send_message(session_id, message, map_context=map_context)
+    return JSONResponse({
+        "reply": result["content"],
+        "session_id": session_id,
+        "map_actions": result["map_actions"],
+    })
 
 
 async def get_documents(request: Request):
@@ -100,7 +107,8 @@ app = Starlette(
         Mount("/mcp/db",   app=db_app),
         Mount("/mcp/geo",  app=geo_app),
         Mount("/mcp/docs", app=docs_app),
-        Mount("/mcp/vector", app=vector_app), 
+        Mount("/mcp/vector", app=vector_app),
+        Mount("/mcp/map",  app=map_app),
 
         # Existing REST API
         Route("/api/chat",                  endpoint=chat,          methods=["POST"]),

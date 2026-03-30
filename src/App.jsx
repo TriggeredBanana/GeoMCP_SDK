@@ -117,6 +117,7 @@ function App() {
           layers={layers}
           onToggleLayer={toggleLayer}
           drawnLayers={drawnLayers}
+          onLayerCreated={upsertDrawnLayer}
           onSetDrawnLayerVisible={setDrawnLayerVisible}
           onRemoveDrawnLayer={removeDrawnLayer}
           onFlyToLayer={setFlyTarget} />

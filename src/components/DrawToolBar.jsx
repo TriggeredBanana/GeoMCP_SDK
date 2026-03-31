@@ -46,7 +46,17 @@ export function DrawToolBar({ drawnLayers = [], onLayerCreated, onLayerUpdated, 
             }
         }
 
-        drawnLayers.forEach(({ id, visible }) => {
+        drawnLayers.forEach(({ id, visible, geoJson, name }) => {
+            // If the layer has no Leaflet counterpart yet (e.g. AI-created), add it
+            if (!layerMapRef.current.has(id) && geoJson) {
+                const leafletLayer = L.geoJSON(geoJson);
+                leafletLayer._gmDrawnId = id;
+                leafletLayer._gmDrawnName = name;
+                layerMapRef.current.set(id, leafletLayer);
+                if (visible !== false) leafletLayer.addTo(map);
+                return;
+            }
+
             const layer = layerMapRef.current.get(id);
             if (!layer) return;
             if (visible && !map.hasLayer(layer)) layer.addTo(map);

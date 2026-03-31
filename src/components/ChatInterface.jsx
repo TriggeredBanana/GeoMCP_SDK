@@ -48,13 +48,17 @@ export function ChatInterface({ drawnLayers = [], onLayerCreated }) {
       const data = await res.json();
       setSessionId(data.session_id);
 
-      if (data.map_actions?.length) {
+      if (data.map_actions?.length && onLayerCreated) {
         data.map_actions.forEach(action => {
+          const geojson = action.geojson;
+          const shape = geojson?.type === 'FeatureCollection'
+            ? 'FeatureCollection'
+            : (geojson?.geometry?.type || 'Feature');
           onLayerCreated({
             id: `drawn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             name: action.layer_name,
-            shape: action.geojson?.geometry?.type || 'Feature',
-            geoJson: action.geojson,
+            shape,
+            geoJson: geojson,
             visible: true,
           });
         });

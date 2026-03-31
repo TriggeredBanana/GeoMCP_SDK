@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -146,7 +147,7 @@ class SessionManager:
 
         if map_context:
             layer_summary = "\n".join(
-                f"- {l.get('name', 'Unnamed')} ({l.get('shape', '?')}): {l.get('geoJson')}"
+                f"- {l.get('name', 'Unnamed')} ({l.get('shape', '?')}): {json.dumps(l.get('geoJson'))}"
                 for l in map_context
             )
             full_message = f"[SESSION_ID: {session_id}]\n[CURRENT MAP STATE]\n{layer_summary}\n\n[USER MESSAGE]\n{message}"

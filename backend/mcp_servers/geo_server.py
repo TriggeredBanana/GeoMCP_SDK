@@ -55,6 +55,8 @@ async def list_vernetyper() -> str:
 async def buffer_search(latitude: float, longitude: float, distance: float = 1000) -> str:
     """
     Finn kulturmiljøer innenfor en gitt avstand fra et punkt.
+    Returnerer en GeoJSON FeatureCollection med alle treff.
+    Etter kall: send resultatet direkte til map-draw_shape() for å vise det på kartet.
 
     Args:
         latitude:  Breddegrad, f.eks. 58.1599 for Kristiansand.

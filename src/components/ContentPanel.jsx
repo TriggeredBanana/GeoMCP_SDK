@@ -19,7 +19,7 @@ const PANEL_COMPONENTS = {
  * This preserves component state — especially important for ChatInterface
  * which must not lose its conversation on every sidebar navigation.
  */
-export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, chatUser, onUserChange }) {
+export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, chatUser, onUserChange, onLayerCreated }) {
     const isOpen = !!activePanel;
 
     // Track which panels have ever been opened so we know which to keep mounted.
@@ -60,6 +60,7 @@ export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetD
                             onFlyToLayer={onFlyToLayer}
                             externalUser={chatUser}
                             onUserChange={onUserChange}
+                            onLayerCreated={onLayerCreated}
                         />
                     </div>
                 );

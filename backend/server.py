@@ -56,11 +56,12 @@ from chat_routes import (
     get_messages,
 )
 
-# Import the three MCP ASGI apps
+# Import the MCP ASGI apps
 from mcp_servers.db_server import db_app
 from mcp_servers.geo_server import geo_app
 from mcp_servers.docs_server import docs_app
 from mcp_servers.vector_server import vector_app
+from mcp_servers.map_server import map_app
 
 logger = logging.getLogger(__name__)
 
@@ -74,17 +75,18 @@ _MAX_TITLE_LENGTH = 80  # Characters from first message used as auto-title
 # Lifespan, start and stop in the right order.
 @asynccontextmanager
 async def lifespan(app):
-    async with db_app.lifespan(app):
-        async with geo_app.lifespan(app):
-            async with docs_app.lifespan(app):
-                async with vector_app.lifespan(app):
-                    await init_db_pool()
-                    await client.start()
-                    manager.start_cleanup_loop()
-                    yield
-                    manager.stop_cleanup_loop()
-                    await client.stop()
-                    await close_pool()
+    async with map_app.lifespan(app):
+        async with db_app.lifespan(app):
+            async with geo_app.lifespan(app):
+                async with docs_app.lifespan(app):
+                    async with vector_app.lifespan(app):
+                        await init_db_pool()
+                        await client.start()
+                        manager.start_cleanup_loop()
+                        yield
+                        manager.stop_cleanup_loop()
+                        await client.stop()
+                        await close_pool()
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +97,7 @@ async def chat(request: Request):
     """
     POST /api/chat
 
-    Body: { message, chat_id? }
+    Body: { message, chat_id?, map_context? }
     Header: Authorization: Bearer <token>
 
     - Validates the session token and resolves the owning user.
@@ -103,7 +105,7 @@ async def chat(request: Request):
     - Ownership of chat_id is enforced before use.
     - Loads prior DB messages for context injection into the Copilot session.
     - Persists the user message and AI reply to app.messages.
-    - Returns { reply, chat_id }.
+    - Returns { reply, chat_id, map_actions }.
     """
     user = await get_user_from_request(request)
     if not user:
@@ -117,6 +119,7 @@ async def chat(request: Request):
     message = (data.get("message") or "").strip()
     if not message:
         return JSONResponse({"error": "'message' is required."}, status_code=400)
+    map_context = data.get("map_context")
 
     chat_id: str | None = data.get("chat_id")
     user_id = str(user["id"])
@@ -165,10 +168,13 @@ async def chat(request: Request):
 
     # Send to Copilot
     try:
-        reply = await manager.send_message(copilot_session, message)
+        result = await manager.send_message(copilot_session, message, map_context=map_context, chat_id=chat_id)
     except Exception as exc:
         logger.error("Copilot send_message failed for chat %s: %s", chat_id, exc)
         return JSONResponse({"error": "AI service error. Please try again."}, status_code=502)
+
+    reply = result["content"]
+    map_actions = result["map_actions"]
 
     # Persist messages  
     try:
@@ -187,7 +193,7 @@ async def chat(request: Request):
     except Exception as exc:
         logger.error("Failed to persist messages for chat %s: %s", chat_id, exc)
 
-    return JSONResponse({"reply": reply, "chat_id": chat_id})
+    return JSONResponse({"reply": reply, "chat_id": chat_id, "map_actions": map_actions})
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +223,7 @@ app = Starlette(
         Mount("/mcp/geo",    app=geo_app),
         Mount("/mcp/docs",   app=docs_app),
         Mount("/mcp/vector", app=vector_app),
+        Mount("/mcp/map",    app=map_app),
 
         # Auth endpoints
         Route("/api/auth/register", endpoint=register, methods=["POST"]),

@@ -1,9 +1,11 @@
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
 
 from copilot import CopilotClient, PermissionHandler
+from mcp_servers.map_server import get_and_clear_shapes
 from config import (
     DEMO_MODE,
     MAX_SESSIONS,
@@ -135,6 +137,11 @@ class SessionManager:
                     "url": f"{SERVER_BASE_URL}/mcp/vector/mcp",
                     "tools": ["*"],
                 },
+                "map": {
+                    "type": "http",
+                    "url": f"{SERVER_BASE_URL}/mcp/map/mcp",
+                    "tools": ["*"],
+                },
             },
             "on_permission_request": permission_handler,
         })
@@ -173,14 +180,29 @@ class SessionManager:
         )
         return "".join(lines)
 
-    async def send_message(self, session, message: str) -> str:
+    async def send_message(self, session, message: str, map_context=None, chat_id: str = "") -> dict:
         """
-        Send *message* to an active Copilot *session* and return the reply text.
+        Send *message* to an active Copilot *session* and return a dict with
+        the reply content and any pending map actions.
 
         Callers are responsible for persisting messages to the database.
         """
-        response = await session.send_and_wait({"prompt": message}, timeout=180)
-        return response.data.content
+        if map_context:
+            layer_summary = "\n".join(
+                f"- {l.get('name', 'Unnamed')} ({l.get('shape', '?')}): {json.dumps(l.get('geoJson'))}"
+                for l in map_context
+            )
+            full_message = f"[SESSION_ID: {chat_id}]\n[CURRENT MAP STATE]\n{layer_summary}\n\n[USER MESSAGE]\n{message}"
+        elif chat_id:
+            full_message = f"[SESSION_ID: {chat_id}]\n\n[USER MESSAGE]\n{message}"
+        else:
+            full_message = message
+
+        response = await session.send_and_wait({"prompt": full_message}, timeout=180)
+        content = response.data.content
+
+        map_actions = get_and_clear_shapes(chat_id)
+        return {"content": content, "map_actions": map_actions}
 
     async def cleanup_expired(self):
         now = datetime.now(timezone.utc)

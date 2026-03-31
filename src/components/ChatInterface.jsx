@@ -14,7 +14,7 @@ import {
   setActiveChatId,
 } from '../utils/auth';
 
-export function ChatInterface({ externalUser, onUserChange }) {
+export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], onLayerCreated }) {
   // Auth state
   const [user, setUser] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -218,6 +218,7 @@ export function ChatInterface({ externalUser, onUserChange }) {
         body: JSON.stringify({
           message: trimmed,
           chat_id: activeChatId || undefined,
+          map_context: drawnLayers,
         }),
       });
 
@@ -229,6 +230,22 @@ export function ChatInterface({ externalUser, onUserChange }) {
           { role: 'assistant', text: data.error || 'En feil oppstod.', attachments: [] },
         ]);
         return;
+      }
+
+      if (data.map_actions?.length && onLayerCreated) {
+        data.map_actions.forEach(action => {
+          const geojson = action.geojson;
+          const shape = geojson?.type === 'FeatureCollection'
+            ? 'FeatureCollection'
+            : (geojson?.geometry?.type || 'Feature');
+          onLayerCreated({
+            id: `drawn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: action.layer_name,
+            shape,
+            geoJson: geojson,
+            visible: true,
+          });
+        });
       }
 
       if (!activeChatId && data.chat_id) {

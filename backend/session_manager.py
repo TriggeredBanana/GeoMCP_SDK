@@ -198,9 +198,21 @@ class SessionManager:
         else:
             full_message = message
 
-        response = await session.send_and_wait({"prompt": full_message}, timeout=180)
-        content = response.data.content
+        try:
+            response = await session.send_and_wait({"prompt": full_message}, timeout=180)
+        except Exception:
+            # Evict the broken session so the next request creates a fresh one
+            # instead of retrying against a permanently dead session.
+            if chat_id and chat_id in self.sessions:
+                self.sessions.pop(chat_id, None)
+                self.last_active.pop(chat_id, None)
+                logger.warning(
+                    "Evicted broken session for chat %s; will recreate on next request",
+                    chat_id,
+                )
+            raise
 
+        content = response.data.content
         map_actions = get_and_clear_shapes(chat_id)
         return {"content": content, "map_actions": map_actions}
 

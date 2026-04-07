@@ -193,6 +193,8 @@ async def get_verdensarv_sites() -> str:
     Use this tool when the user asks about Norwegian world heritage sites,
     their locations, or any details about them. Always return the full list
     from the database, even if the user only asks about one site.
+    After calling this tool, pass the GeoJSON geometries to map-draw_shape()
+    to visualize the sites on the map.
     """
     try:
         async with get_connection() as conn:

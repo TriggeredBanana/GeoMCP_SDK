@@ -1,10 +1,12 @@
 import asyncio
+import json
 import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from copilot import CopilotClient, PermissionHandler
+from mcp_servers.map_server import get_and_clear_shapes
 from config import (
     DEMO_MODE,
     MAX_HISTORY_PER_SESSION,
@@ -123,9 +125,9 @@ class SessionManager:
                     "url": f"{SERVER_BASE_URL}/mcp/vector/mcp",
                     "tools": ["*"],
                 },
-                "search": {
+                "map": {
                     "type": "http",
-                    "url": f"{SERVER_BASE_URL}/mcp/search/mcp",
+                    "url": f"{SERVER_BASE_URL}/mcp/map/mcp",
                     "tools": ["*"],
                 },
             },
@@ -138,14 +140,23 @@ class SessionManager:
         logger.info("Session created: %s (active=%d)", session_id, len(self.sessions))
         return session_id, session
 
-    async def send_message(self, session_id, message):
+    async def send_message(self, session_id, message, map_context=None):
         session = self.sessions.get(session_id)
         if session is None:
             raise ValueError(f"Session {session_id} not found or expired")
 
         self.last_active[session_id] = datetime.now(timezone.utc)
 
-        response = await session.send_and_wait({"prompt": message}, timeout=180)
+        if map_context:
+            layer_summary = "\n".join(
+                f"- {l.get('name', 'Unnamed')} ({l.get('shape', '?')}): {json.dumps(l.get('geoJson'))}"
+                for l in map_context
+            )
+            full_message = f"[SESSION_ID: {session_id}]\n[CURRENT MAP STATE]\n{layer_summary}\n\n[USER MESSAGE]\n{message}"
+        else:
+            full_message = f"[SESSION_ID: {session_id}]\n\n[USER MESSAGE]\n{message}"
+
+        response = await session.send_and_wait({"prompt": full_message}, timeout=180)
         content = response.data.content
 
         self.history[session_id].append({"role": "user", "content": message})
@@ -154,7 +165,8 @@ class SessionManager:
         if len(self.history[session_id]) > self.max_history:
             self.history[session_id] = self.history[session_id][-self.max_history:]
 
-        return content
+        map_actions = get_and_clear_shapes(session_id)
+        return {"content": content, "map_actions": map_actions}
 
     async def cleanup_expired(self):
         now = datetime.now(timezone.utc)

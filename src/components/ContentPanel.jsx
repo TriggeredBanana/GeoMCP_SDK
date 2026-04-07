@@ -10,7 +10,7 @@ const PANEL_COMPONENTS = {
     'Eksporter': ExportPanel,
 };
 
-export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer }) {
+export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, onLayerCreated }) {
     const isOpen = !!activePanel;
     const Component = PANEL_COMPONENTS[activePanel] || (() => <h2>{activePanel}</h2>);
 
@@ -24,6 +24,7 @@ export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetD
                     onSetDrawnLayerVisible={onSetDrawnLayerVisible}
                     onRemoveDrawnLayer={onRemoveDrawnLayer}
                     onFlyToLayer={onFlyToLayer}
+                    onLayerCreated={onLayerCreated}
                 />
             )}
         </div>

@@ -3,7 +3,7 @@ import { ArrowUp, Paperclip, FileText, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-export function ChatInterface() {
+export function ChatInterface({ drawnLayers = [], onLayerCreated }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -41,11 +41,28 @@ export function ChatInterface() {
           message: trimmed,
           session_id: sessionId,
           document: selectedDocument || null,
+          map_context: drawnLayers
         })
       });
 
       const data = await res.json();
       setSessionId(data.session_id);
+
+      if (data.map_actions?.length && onLayerCreated) {
+        data.map_actions.forEach(action => {
+          const geojson = action.geojson;
+          const shape = geojson?.type === 'FeatureCollection'
+            ? 'FeatureCollection'
+            : (geojson?.geometry?.type || 'Feature');
+          onLayerCreated({
+            id: `drawn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: action.layer_name,
+            shape,
+            geoJson: geojson,
+            visible: true,
+          });
+        });
+      }
 
       const aiMessage = {
         role: "assistant",

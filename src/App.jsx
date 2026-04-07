@@ -4,6 +4,7 @@ import { Header } from './components/Header.jsx';
 import { Sidebar } from './components/Sidebar.jsx';
 import { ContentPanel } from './components/ContentPanel.jsx';
 import Map from './components/Map.jsx';
+import { apiFetch, clearToken, clearActiveChatId } from './utils/auth';
 
 import { faLayerGroup, faChartLine, faFileExport } from '@fortawesome/free-solid-svg-icons';
 import { faMessage } from '@fortawesome/free-regular-svg-icons';
@@ -100,9 +101,23 @@ function App() {
 
   const [flyTarget, setFlyTarget] = useState(null);
 
+  // Global user state (synced from ChatInterface via onUserChange)
+  const [chatUser, setChatUser] = useState(null);
+
+  async function handleHeaderLogout() {
+    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch {}
+    clearToken();
+    clearActiveChatId();
+    setChatUser(null);
+  }
+
+  function handleHeaderLogin() {
+    setActivePanel('Chatbot');
+  }
+
   return (
     <>
-      <Header theme={theme} onToggleTheme={toggleTheme} />
+      <Header theme={theme} onToggleTheme={toggleTheme} user={chatUser} onLogout={handleHeaderLogout} onLogin={handleHeaderLogin} />
       <div className="app-body">
         <Sidebar 
           items={menuItems} 
@@ -120,7 +135,9 @@ function App() {
           onLayerCreated={upsertDrawnLayer}
           onSetDrawnLayerVisible={setDrawnLayerVisible}
           onRemoveDrawnLayer={removeDrawnLayer}
-          onFlyToLayer={setFlyTarget} />
+          onFlyToLayer={setFlyTarget}
+          chatUser={chatUser}
+          onUserChange={setChatUser} />
 
         <main className="map-stage">
           <Map

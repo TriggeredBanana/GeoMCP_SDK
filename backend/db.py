@@ -62,3 +62,23 @@ async def query(sql, params=None):
             await cur.execute(sql, params)
             return await cur.fetchall()
 
+
+async def execute(sql: str, params=None) -> None:
+    """Execute a DML statement (INSERT, UPDATE, DELETE) that returns no rows."""
+    if _pool is None:
+        raise RuntimeError("pool is not initialized.")
+    async with _pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(sql, params)
+
+
+async def execute_transaction(statements: list[tuple[str, tuple | None]]) -> None:
+    """Execute multiple SQL statements atomically in a single transaction."""
+    if _pool is None:
+        raise RuntimeError("pool is not initialized.")
+    async with _pool.connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                for sql, params in statements:
+                    await cur.execute(sql, params)
+

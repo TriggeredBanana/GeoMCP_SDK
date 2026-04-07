@@ -3,28 +3,61 @@ import { Analysis } from './Analysis';
 import { KartlagPanel } from './KartlagPanel';
 import { ExportPanel } from './ExportPanel';
 
-const PANEL_COMPONENTS = {
-    'Chatbot': ChatInterface,
-    'Kartlag': KartlagPanel,
-    'Analyse': Analysis,
-    'Eksporter': ExportPanel,
-};
-
-export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, onLayerCreated }) {
+/**
+ * ContentPanel
+ *
+ * Keeps ChatInterface mounted even when the user switches panels so the
+ * active conversation, auth state, and in-progress input do not reset.
+ */
+export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, chatUser, onUserChange, onLayerCreated }) {
     const isOpen = !!activePanel;
-    const Component = PANEL_COMPONENTS[activePanel] || (() => <h2>{activePanel}</h2>);
 
     return (
         <div className={`content-panel ${isOpen ? 'content-panel--open' : 'content-panel--closed'}`}>
             <button className="close-btn" onClick={onClose}>✕</button>
-            {isOpen && (
-                <Component
+            <div
+                style={{
+                    display: activePanel === 'Chatbot' ? 'flex' : 'none',
+                    flexDirection: 'column',
+                    height: '100%',
+                    minHeight: 0,
+                }}
+            >
+                <ChatInterface
+                    drawnLayers={drawnLayers}
+                    onLayerCreated={onLayerCreated}
+                    externalUser={chatUser}
+                    onUserChange={onUserChange}
+                />
+            </div>
+
+            {activePanel === 'Kartlag' && (
+                <KartlagPanel
                     layers={layers}
                     drawnLayers={drawnLayers}
                     onSetDrawnLayerVisible={onSetDrawnLayerVisible}
                     onRemoveDrawnLayer={onRemoveDrawnLayer}
                     onFlyToLayer={onFlyToLayer}
-                    onLayerCreated={onLayerCreated}
+                />
+            )}
+
+            {activePanel === 'Analyse' && (
+                <Analysis
+                    layers={layers}
+                    drawnLayers={drawnLayers}
+                    onSetDrawnLayerVisible={onSetDrawnLayerVisible}
+                    onRemoveDrawnLayer={onRemoveDrawnLayer}
+                    onFlyToLayer={onFlyToLayer}
+                />
+            )}
+
+            {activePanel === 'Eksporter' && (
+                <ExportPanel
+                    layers={layers}
+                    drawnLayers={drawnLayers}
+                    onSetDrawnLayerVisible={onSetDrawnLayerVisible}
+                    onRemoveDrawnLayer={onRemoveDrawnLayer}
+                    onFlyToLayer={onFlyToLayer}
                 />
             )}
         </div>

@@ -5,6 +5,13 @@
 ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS source_blob TEXT;
 
--- Full unique constraint (not partial) — required for ON CONFLICT (source_blob)
-ALTER TABLE documents
-    ADD CONSTRAINT IF NOT EXISTS uq_documents_source_blob UNIQUE (source_blob);
+-- Add unique constraint only if it doesn't already exist.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_documents_source_blob'
+    ) THEN
+        ALTER TABLE documents
+            ADD CONSTRAINT uq_documents_source_blob UNIQUE (source_blob);
+    END IF;
+END $$;

@@ -88,7 +88,9 @@ async def get_embeddings(texts: list[str]) -> list[list[float]]:
     return await loop.run_in_executor(None, _call_embeddings_sync, texts)
 
 
-async def get_single_embedding(text: str) -> list[float]:
-    """Embed a single text string, return one vector."""
+async def get_single_embedding(text: str) -> list[float] | None:
+    """Embed a single text string, return one vector (or None on failure)."""
     results = await get_embeddings([text])
+    if not results:
+        return None
     return results[0]

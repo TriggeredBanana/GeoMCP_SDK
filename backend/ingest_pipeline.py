@@ -16,6 +16,7 @@ Entry points:
 """
 
 import asyncio
+import json
 import logging
 import time
 from typing import Optional
@@ -195,7 +196,7 @@ async def save_indexed_document(
     t0 = time.perf_counter()
 
     # Convert embedding list to pgvector string format: "[0.1,0.2,...]"
-    emb_str = str(embeddings) if embeddings else None
+    emb_str = json.dumps(embeddings) if embeddings else None
 
     rows = await query(
         """
@@ -256,21 +257,33 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
     last_modified = blob["last_modified"]
     file_hash = blob["file_hash"]
 
-    # Step 2: check if (re)indexing is needed
-    if not await should_reindex_document(blob_name, last_modified, file_hash, retry_failed):
-        logger.info("process_document: skipping '%s' (up to date)", blob_name)
-        return {"status": "skipped", "blob": blob_name}
-
-    # Lock the row as 'processing' before starting (prevents duplicate runs)
-    await execute(
+    # Atomic claim: check eligibility and set status='processing' in one statement.
+    # Returns a row only if the document should be (re)indexed, preventing race conditions
+    # when multiple workers process the same document concurrently.
+    claimed = await query(
         """
         INSERT INTO documents
             (title, content, source_blob, last_modified, file_hash, indexing_status)
         VALUES (%(blob)s, '', %(blob)s, %(lm)s, %(hash)s, 'processing')
-        ON CONFLICT (source_blob) DO UPDATE SET indexing_status = 'processing'
+        ON CONFLICT (source_blob) DO UPDATE
+            SET indexing_status = 'processing'
+        WHERE documents.indexing_status != 'processing'
+          AND CASE documents.indexing_status
+              WHEN 'ready' THEN
+                  documents.last_modified IS DISTINCT FROM %(lm)s
+                  OR documents.file_hash IS DISTINCT FROM %(hash)s
+              WHEN 'failed' THEN %(retry)s::boolean
+              ELSE true
+          END
+        RETURNING id;
         """,
-        {"blob": blob_name, "lm": last_modified, "hash": file_hash},
+        {"blob": blob_name, "lm": last_modified, "hash": file_hash,
+         "retry": retry_failed},
     )
+
+    if not claimed:
+        logger.info("process_document: skipping '%s' (up to date or already processing)", blob_name)
+        return {"status": "skipped", "blob": blob_name}
 
     try:
         # Step 3: extract text

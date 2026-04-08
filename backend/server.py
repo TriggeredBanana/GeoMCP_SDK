@@ -231,6 +231,8 @@ async def test_db(request: Request):
 
 async def test_search(request: Request):
     """Quick REST endpoint to test document search without MCP protocol."""
+    if not DEMO_MODE:
+        return JSONResponse({"error": "Only available in demo mode."}, status_code=403)
     q = request.query_params.get("q", "")
     if not q:
         return JSONResponse({"error": "Bruk ?q=søkeord"}, status_code=400)

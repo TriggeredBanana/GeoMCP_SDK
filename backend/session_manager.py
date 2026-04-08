@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 
-from copilot import CopilotClient, PermissionHandler
+from copilot import CopilotClient, PermissionHandler, PermissionRequestResult
 from mcp_servers.map_server import get_and_clear_shapes
 from config import (
     DEMO_MODE,
@@ -26,12 +26,12 @@ _MAX_CONTEXT_CHARS = 1000
 def strict_permission_handler(*_args, **_kwargs):
     """Deny tool permission requests by default outside demo mode."""
     logger.warning("PERMISSION DENIED: args=%s kwargs=%s", _args, _kwargs)
-    return {"kind": "denied-by-rules"}
+    return PermissionRequestResult(kind="denied-by-rules")
 
 def allow_all_permission_handler(*_args, **_kwargs):
     """Allow tool permission requests in demo mode when SDK helpers are unavailable."""
     logger.info("PERMISSION GRANTED: args=%s kwargs=%s", _args, _kwargs)
-    return {"kind": "approved"}
+    return PermissionRequestResult(kind="approved")
 
 
 class SessionManager:

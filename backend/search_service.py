@@ -10,10 +10,25 @@ Provides four search strategies:
 For document ingestion, see ingest_pipeline.py.
 """
 
+import json
 import logging
 from db import query
 
 logger = logging.getLogger(__name__)
+
+_SNIPPET_LENGTH = 300
+
+
+def _with_snippets(rows) -> list[dict]:
+    """Convert rows to dicts and truncate content to a short snippet."""
+    results = []
+    for r in rows:
+        d = dict(r)
+        content = d.get("content", "")
+        if len(content) > _SNIPPET_LENGTH:
+            d["content"] = content[:_SNIPPET_LENGTH] + "…"
+        results.append(d)
+    return results
 
 async def search_full_text(search_query: str, limit: int = 10) -> list[dict]:
     """
@@ -38,7 +53,7 @@ async def search_full_text(search_query: str, limit: int = 10) -> list[dict]:
         {"q": search_query.strip(), "lim": limit},
     )
     logger.info("search_full_text: query='%s' → %d treff", search_query.strip(), len(rows))
-    return [dict(r) for r in rows]
+    return _with_snippets(rows)
 
 
 async def search_semantic(search_query: str, limit: int = 10) -> list[dict]:
@@ -70,10 +85,10 @@ async def search_semantic(search_query: str, limit: int = 10) -> list[dict]:
         ORDER BY embedding <=> %(emb)s::vector
         LIMIT %(lim)s;
         """,
-        {"emb": str(query_embedding), "lim": limit},
+        {"emb": json.dumps(query_embedding), "lim": limit},
     )
     logger.info("search_semantic: query='%s' → %d treff", search_query.strip(), len(rows))
-    return [dict(r) for r in rows]
+    return _with_snippets(rows)
 
 
 async def search_fuzzy(search_query: str, limit: int = 10) -> list[dict]:
@@ -106,7 +121,7 @@ async def search_fuzzy(search_query: str, limit: int = 10) -> list[dict]:
         {"q": search_query.strip(), "lim": limit},
     )
     logger.info("search_fuzzy: query='%s' → %d treff", search_query.strip(), len(rows))
-    return [dict(r) for r in rows]
+    return _with_snippets(rows)
 
 
 async def hybrid_search(search_query: str, limit: int = 10) -> list[dict]:

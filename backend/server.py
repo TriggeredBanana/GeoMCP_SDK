@@ -1,11 +1,12 @@
 """
 Main Starlette application.
 
-Mounts three MCP servers alongside the existing REST API:
+Mounts MCP servers alongside the existing REST API:
 
-  /mcp/db/mcp    — Database tools  (list_tables, describe_table, query_database)
-  /mcp/geo/mcp   — Geo tools       (list_kommuner, list_vernetyper, buffer_search)
-  /mcp/docs/mcp  — Document tools  (list_documents, fetch_document)
+  /mcp/db/mcp      — Database tools  (list_tables, describe_table, query_database)
+  /mcp/geo/mcp     — Geo tools       (list_kommuner, list_vernetyper, buffer_search)
+  /mcp/docs/mcp    — Document tools  (list_documents, fetch_document)
+  /mcp/search/mcp  — Search tools    (search_documents, search_hybrid, index_*)
 
 Auth endpoints:
   POST /api/auth/register
@@ -23,6 +24,7 @@ Chat management endpoints:
 AI orchestration:
   POST /api/chat      — Send a message; persists to DB, returns AI reply
   GET  /api/documents — Azure document list
+  GET  /api/search    — Quick test endpoint for document search
 """
 
 import logging
@@ -62,6 +64,7 @@ from mcp_servers.geo_server import geo_app
 from mcp_servers.docs_server import docs_app
 from mcp_servers.vector_server import vector_app
 from mcp_servers.map_server import map_app
+from mcp_servers.search_server import search_app
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +78,19 @@ _MAX_TITLE_LENGTH = 80  # Characters from first message used as auto-title
 # Lifespan, start and stop in the right order.
 @asynccontextmanager
 async def lifespan(app):
-    async with map_app.lifespan(app):
-        async with db_app.lifespan(app):
-            async with geo_app.lifespan(app):
-                async with docs_app.lifespan(app):
-                    async with vector_app.lifespan(app):
-                        await init_db_pool()
-                        await client.start()
-                        manager.start_cleanup_loop()
-                        yield
-                        manager.stop_cleanup_loop()
-                        await client.stop()
-                        await close_pool()
+    async with db_app.lifespan(app):
+        async with geo_app.lifespan(app):
+            async with docs_app.lifespan(app):
+                async with vector_app.lifespan(app):
+                    async with map_app.lifespan(app):
+                        async with search_app.lifespan(app):
+                            await init_db_pool()
+                            await client.start()
+                            manager.start_cleanup_loop()
+                            yield
+                            manager.stop_cleanup_loop()
+                            await client.stop()
+                            await close_pool()
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +229,26 @@ async def test_db(request: Request):
     return JSONResponse({"data": result})
 
 
+async def test_search(request: Request):
+    """Quick REST endpoint to test document search without MCP protocol."""
+    if not DEMO_MODE:
+        return JSONResponse({"error": "Only available in demo mode."}, status_code=403)
+    q = request.query_params.get("q", "")
+    if not q:
+        return JSONResponse({"error": "Bruk ?q=søkeord"}, status_code=400)
+    from search_service import search_full_text, search_fuzzy, search_semantic, hybrid_search
+    mode = request.query_params.get("mode", "fulltext")
+    if mode == "fuzzy":
+        results = await search_fuzzy(q)
+    elif mode == "semantic":
+        results = await search_semantic(q)
+    elif mode == "hybrid":
+        results = await hybrid_search(q)
+    else:
+        results = await search_full_text(q)
+    return JSONResponse({"query": q, "mode": mode, "count": len(results), "results": results})
+
+
 # ---------------------------------------------------------------------------
 # Assemble the Starlette application
 # ---------------------------------------------------------------------------
@@ -237,6 +261,7 @@ app = Starlette(
         Mount("/mcp/docs",   app=docs_app),
         Mount("/mcp/vector", app=vector_app),
         Mount("/mcp/map",    app=map_app),
+        Mount("/mcp/search", app=search_app),
 
         # Auth endpoints
         Route("/api/auth/register", endpoint=register, methods=["POST"]),
@@ -267,6 +292,7 @@ app = Starlette(
         # Miscellaneous
         Route("/api/documents", endpoint=get_documents, methods=["GET"]),
         Route("/api/test-db",   endpoint=test_db,       methods=["GET"]),
+        Route("/api/search",    endpoint=test_search,   methods=["GET"]),
     ],
     middleware=[
         Middleware(

@@ -566,6 +566,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
         #             → automatically retried on next pipeline run
         if has_any_embedding:
             await update_index_status(blob_name, "ready")
+            return {"status": "ok", "blob": blob_name, "document_id": doc_id, "chunks": chunk_count}
         else:
             await update_index_status(blob_name, "partial")
             logger.warning(
@@ -573,8 +574,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                 "semantic search unavailable until embeddings succeed",
                 blob_name,
             )
-
-        return {"status": "ok", "blob": blob_name, "document_id": doc_id, "chunks": chunk_count}
+            return {"status": "partial", "blob": blob_name, "document_id": doc_id, "chunks": chunk_count}
 
     except Exception as e:
         logger.error("process_document: failed '%s': %s", blob_name, e, exc_info=True)
@@ -623,21 +623,24 @@ async def run_pipeline(force: bool = False, retry_failed: bool = True) -> dict:
     results = await asyncio.gather(*[process_with_limit(blob) for blob in blobs])
 
     ok      = [r for r in results if r["status"] == "ok"]
+    partial = [r for r in results if r["status"] == "partial"]
     skipped = [r for r in results if r["status"] == "skipped"]
     failed  = [r for r in results if r["status"] == "error"]
 
     elapsed = time.perf_counter() - t_total
     logger.info(
-        "run_pipeline: done in %.2fs — %d indexed, %d skipped, %d failed",
-        elapsed, len(ok), len(skipped), len(failed),
+        "run_pipeline: done in %.2fs — %d indexed, %d partial, %d skipped, %d failed",
+        elapsed, len(ok), len(partial), len(skipped), len(failed),
     )
 
     return {
         "status": "ok",
         "total": len(blobs),
         "indexed": len(ok),
+        "partial": len(partial),
         "skipped": len(skipped),
         "failed": len(failed),
         "elapsed_seconds": round(elapsed, 2),
+        "partial_files": [r["blob"] for r in partial],
         "failed_files": [{"blob": r["blob"], "error": r.get("error")} for r in failed],
     }

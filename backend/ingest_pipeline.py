@@ -8,12 +8,20 @@ Pipeline steps per document:
   4. chunk_document()           — split into structure-aware chunks (heading-based, from chunker.py)
   5. save_indexed_document()    — upsert into documents table (content for full-text search)
   6. save_chunks()              — embed each chunk via GitHub Models API and insert into chunks table
-  7. update_index_status()      — set status (used on failure)
+  7. update_index_status()      — set final status
+
+Status model (indexing_status):
+  new        — not yet processed
+  processing — pipeline is actively working on this document
+  ready      — fully indexed: content + embeddings available
+  partial    — content indexed (full-text/fuzzy OK), but embeddings failed;
+               automatically retried on next pipeline run
+  failed     — extraction or processing error
 
 Legacy functions kept for reference (no longer called in the main pipeline):
   extract_text()       — plain text extraction (still used by docs_server indirectly via config)
   chunk_text()         — fixed-size character chunking (superseded by chunker.py)
-  generate_embeddings() — averaged document embedding (superseded by per-chunk embeddings)
+  generate_embeddings() — averaged document embedding (fallback for doc-level embedding)
 
 Entry points:
   run_pipeline(force, retry_failed)  — process all blobs, with concurrency control
@@ -96,7 +104,8 @@ async def should_reindex_document(
     if status == "failed":
         return retry_failed
 
-    # status = 'new' or unexpected value → process it
+    # status = 'new', 'partial', or unexpected value → process it.
+    # 'partial' means content was indexed but embeddings failed — always retry.
     return True
 
 
@@ -530,6 +539,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
         # Fallback: if no chunk embeddings were generated but we have content,
         # attempt a document-level embedding so semantic search can still find
         # this document via the documents.embedding fallback path.
+        has_any_embedding = embedded_count > 0
         if embedded_count == 0 and content.strip():
             logger.warning(
                 "process_document: no chunk embeddings for '%s' — attempting document-level fallback",
@@ -542,6 +552,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                     {"emb": json.dumps(doc_embedding), "id": doc_id},
                 )
                 logger.info("process_document: document-level embedding saved for '%s'", blob_name)
+                has_any_embedding = True
             else:
                 logger.warning(
                     "process_document: document-level embedding also failed for '%s' "
@@ -549,8 +560,19 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                     blob_name,
                 )
 
-        # Step 7: all data committed — now flip to 'ready'
-        await update_index_status(blob_name, "ready")
+        # Step 7: flip status.
+        # 'ready'   = fully indexed (content + embeddings available)
+        # 'partial' = content indexed for full-text/fuzzy, but no embeddings
+        #             → automatically retried on next pipeline run
+        if has_any_embedding:
+            await update_index_status(blob_name, "ready")
+        else:
+            await update_index_status(blob_name, "partial")
+            logger.warning(
+                "process_document: '%s' set to 'partial' — full-text/fuzzy OK, "
+                "semantic search unavailable until embeddings succeed",
+                blob_name,
+            )
 
         return {"status": "ok", "blob": blob_name, "document_id": doc_id, "chunks": chunk_count}
 

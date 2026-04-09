@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS documents (
     -- Ingest pipeline tracking
     last_modified    TIMESTAMPTZ,                              -- blob last-modified from Azure
     file_hash        TEXT,                                     -- blob etag; changes when content changes
-    indexing_status  TEXT        NOT NULL DEFAULT 'new',       -- new | processing | ready | failed
+    indexing_status  TEXT        NOT NULL DEFAULT 'new',       -- new | processing | ready | partial | failed
     indexed_at       TIMESTAMPTZ,
     error_message    TEXT,
 

@@ -330,6 +330,65 @@ def test_block_helper_is_bold():
     return ok
 
 
+def test_chunk_structure_contract():
+    """
+    Validate that every chunk produced by chunk_document() has the exact
+    structure expected by save_chunks() and the embedding layer:
+      - 'text' (non-empty string)
+      - 'char_count' (positive int)
+      - 'chunk_index' (int)
+      - 'local_id' (int)
+      - 'local_parent_id' (int or None)
+      - 'metadata' dict with expected keys
+
+    This is the structural contract test for the ingest pipeline integration.
+    A true embedding-failure test requires mocking the DB and embedding client,
+    which is outside the scope of this standalone test script.
+    """
+    blocks = [
+        _heading_block("1 Innledning"),
+        _block("Tekst under innledning som er lang nok til a fungere som innhold."),
+        _heading_block("2 Bakgrunn"),
+        _block("Mer innhold her for a sikre realistisk chunking."),
+    ]
+    chunks = chunk_document(blocks, document_name="ContractTest", source_blob="contract.pdf")
+
+    required_top_keys = {"text", "char_count", "chunk_index", "local_id", "local_parent_id", "metadata"}
+    required_meta_keys = {
+        "file_type", "heading_path", "section_title", "section_number",
+        "page_start", "page_end", "topic_type", "alternative", "delomrade",
+        "contains_table",
+    }
+
+    ok = True
+    for c in chunks:
+        idx = c.get("chunk_index", "?")
+        # Top-level keys
+        missing_top = required_top_keys - set(c.keys())
+        ok &= assert_true(f"chunk {idx} has all top-level keys", len(missing_top) == 0)
+        if missing_top:
+            print(f"    missing: {missing_top}")
+
+        # Metadata keys
+        meta = c.get("metadata", {})
+        missing_meta = required_meta_keys - set(meta.keys())
+        ok &= assert_true(f"chunk {idx} metadata has all required keys", len(missing_meta) == 0)
+        if missing_meta:
+            print(f"    missing metadata: {missing_meta}")
+
+        # Value types / constraints
+        ok &= assert_true(f"chunk {idx} text is non-empty str", isinstance(c["text"], str) and bool(c["text"].strip()))
+        ok &= assert_true(f"chunk {idx} char_count > 0", isinstance(c["char_count"], int) and c["char_count"] > 0)
+        ok &= assert_true(f"chunk {idx} chunk_index is int", isinstance(c["chunk_index"], int))
+        ok &= assert_true(f"chunk {idx} local_id is int", isinstance(c["local_id"], int))
+        ok &= assert_true(
+            f"chunk {idx} local_parent_id is int or None",
+            c["local_parent_id"] is None or isinstance(c["local_parent_id"], int),
+        )
+
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
@@ -348,6 +407,7 @@ def main():
         ("chunk_index is sequential from 0",                 test_chunk_index_sequential),
         ("Chunk text non-empty (embedding contract)",        test_chunk_text_non_empty_for_embedding),
         ("_block() helper respects is_bold",                 test_block_helper_is_bold),
+        ("Chunk structure contract for save_chunks()",       test_chunk_structure_contract),
     ]
 
     passed = 0

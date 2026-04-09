@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 from psycopg_pool import AsyncConnectionPool
 from config import DATABASE_URL
 from psycopg.rows import dict_row
@@ -54,7 +55,7 @@ def get_connection():
         raise RuntimeError("pool is not initialized.")
     return _pool.connection()
 
-async def query(sql, params=None):
+async def query(sql: str, params=None) -> list[dict[str, Any]]:
     if _pool is None:
         raise RuntimeError("pool is not initialized.")
     async with _pool.connection() as conn:

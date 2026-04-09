@@ -26,7 +26,7 @@ import logging
 import time
 from typing import Optional
 
-from db import query, execute
+from db import query, execute, get_connection
 from config import (
     fetch_document as _fetch_document_sync,
     fetch_document_blocks as _fetch_document_blocks_sync,
@@ -270,23 +270,24 @@ async def save_indexed_document(
 _EMBEDDING_BATCH_SIZE = 50  # TUNE
 
 
-async def save_chunks(document_id: int, chunks: list[dict]) -> int:
+async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
     """
     Embed all chunks (batched API calls) and upsert them into the chunks table.
 
     Steps:
       1. Generate embeddings for all chunk texts in batches of _EMBEDDING_BATCH_SIZE.
-      2. DELETE existing chunks for this document (clean slate on re-index).
-      3. INSERT parent chunks (local_parent_id = None), recording their DB IDs.
-      4. INSERT child chunks, resolving local_parent_id → real DB id.
+      2. In a single transaction:
+         a. DELETE existing chunks for this document (clean slate on re-index).
+         b. INSERT parent chunks (local_parent_id = None), recording their DB IDs.
+         c. INSERT child chunks, resolving local_parent_id → real DB id.
 
-    Returns the total number of chunks inserted.
+    Returns (total_inserted, embedded_count).
     Embedding failures are non-fatal: affected chunks are stored without a vector.
     """
     if not chunks:
-        return 0
+        return (0, 0)
 
-    # --- Step 1: generate embeddings in batches ---
+    # --- Step 1: generate embeddings in batches (outside transaction — external API) ---
     texts       = [c["text"] for c in chunks]
     all_vectors: list[list[float] | None] = []
 
@@ -316,57 +317,71 @@ async def save_chunks(document_id: int, chunks: list[dict]) -> int:
         )
         all_vectors = (all_vectors + [None] * len(chunks))[:len(chunks)]
 
+    embedded_count = sum(1 for v in all_vectors if v is not None)
+
     # Build a lookup: local_id → (chunk dict, embedding vector)
     local_id_map: dict[int, tuple[dict, list[float] | None]] = {
         c["local_id"]: (c, all_vectors[i])
         for i, c in enumerate(chunks)
     }
 
-    # --- Step 2: delete existing chunks for this document ---
-    await execute(
-        "DELETE FROM chunks WHERE document_id = %(doc_id)s",
-        {"doc_id": document_id},
-    )
-
-    # --- Steps 3 & 4: insert parents, then children ---
-    local_id_to_db_id: dict[int, int] = {}
-
     parent_chunks = [c for c in chunks if c["local_parent_id"] is None]
     child_chunks  = [c for c in chunks if c["local_parent_id"] is not None]
 
-    for chunk in parent_chunks:
-        db_id = await _insert_chunk(document_id, None, chunk, local_id_map[chunk["local_id"]][1])
-        if db_id is not None:
-            local_id_to_db_id[chunk["local_id"]] = db_id
+    # --- Steps 2-4: DELETE + all INSERTs in a single transaction ---
+    local_id_to_db_id: dict[int, int] = {}
 
-    for chunk in child_chunks:
-        parent_db_id = local_id_to_db_id.get(chunk["local_parent_id"])
-        if parent_db_id is None:
-            logger.warning(
-                "save_chunks: parent local_id=%s not found for child chunk (doc %s) — inserting as top-level",
-                chunk["local_parent_id"], document_id,
-            )
-        await _insert_chunk(document_id, parent_db_id, chunk, local_id_map[chunk["local_id"]][1])
+    async with get_connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "DELETE FROM chunks WHERE document_id = %(doc_id)s",
+                    {"doc_id": document_id},
+                )
+
+                for chunk in parent_chunks:
+                    db_id = await _insert_chunk(
+                        cur, document_id, None, chunk,
+                        local_id_map[chunk["local_id"]][1],
+                    )
+                    if db_id is not None:
+                        local_id_to_db_id[chunk["local_id"]] = db_id
+
+                for chunk in child_chunks:
+                    parent_db_id = local_id_to_db_id.get(chunk["local_parent_id"])
+                    if parent_db_id is None:
+                        logger.warning(
+                            "save_chunks: parent local_id=%s not found for child chunk (doc %s) — inserting as top-level",
+                            chunk["local_parent_id"], document_id,
+                        )
+                    await _insert_chunk(
+                        cur, document_id, parent_db_id, chunk,
+                        local_id_map[chunk["local_id"]][1],
+                    )
 
     total = len(parent_chunks) + len(child_chunks)
-    logger.info("save_chunks: document_id=%s → %d chunks saved", document_id, total)
-    return total
+    logger.info(
+        "save_chunks: document_id=%s → %d chunks saved (%d with embeddings)",
+        document_id, total, embedded_count,
+    )
+    return (total, embedded_count)
 
 
 async def _insert_chunk(
+    cur,
     document_id:  int,
     parent_db_id: int | None,
     chunk:        dict,
     vector:       list[float] | None,
 ) -> int | None:
     """
-    Insert a single chunk row into the chunks table.
+    Insert a single chunk row into the chunks table using the given cursor.
     Returns the new DB id, or None if the insert returned no rows.
     """
     meta     = chunk["metadata"]
     emb_str  = json.dumps(vector) if vector else None
 
-    rows = await query(
+    await cur.execute(
         """
         INSERT INTO chunks (
             document_id, parent_chunk_id, chunk_index, text, char_count,
@@ -399,7 +414,8 @@ async def _insert_chunk(
             "embedding":      emb_str,
         },
     )
-    return rows[0]["id"] if rows else None
+    row = await cur.fetchone()
+    return row["id"] if row else None
 
 
 # ---------------------------------------------------------------------------
@@ -505,11 +521,33 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
 
         # Step 6: embed and save chunks
         t0 = time.perf_counter()
-        chunk_count = await save_chunks(doc_id, raw_chunks)
+        chunk_count, embedded_count = await save_chunks(doc_id, raw_chunks)
         logger.info(
-            "save_chunks: '%s' → %d chunks saved (%.3fs)",
-            blob_name, chunk_count, time.perf_counter() - t0,
+            "save_chunks: '%s' → %d chunks saved, %d with embeddings (%.3fs)",
+            blob_name, chunk_count, embedded_count, time.perf_counter() - t0,
         )
+
+        # Fallback: if no chunk embeddings were generated but we have content,
+        # attempt a document-level embedding so semantic search can still find
+        # this document via the documents.embedding fallback path.
+        if embedded_count == 0 and content.strip():
+            logger.warning(
+                "process_document: no chunk embeddings for '%s' — attempting document-level fallback",
+                blob_name,
+            )
+            doc_embedding = await generate_embeddings(chunk_text(content))
+            if doc_embedding:
+                await execute(
+                    "UPDATE documents SET embedding = %(emb)s::vector WHERE id = %(id)s",
+                    {"emb": json.dumps(doc_embedding), "id": doc_id},
+                )
+                logger.info("process_document: document-level embedding saved for '%s'", blob_name)
+            else:
+                logger.warning(
+                    "process_document: document-level embedding also failed for '%s' "
+                    "— semantic search unavailable until re-index with working embeddings",
+                    blob_name,
+                )
 
         # Step 7: all data committed — now flip to 'ready'
         await update_index_status(blob_name, "ready")

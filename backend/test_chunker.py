@@ -33,7 +33,7 @@ from chunker import (
 # ---------------------------------------------------------------------------
 
 def _block(text: str, page: int = 1, font_size: float = 11.0, is_bold: bool = False) -> dict:
-    return {"text": text, "page": page, "font_size": font_size, "is_bold": False, "bbox": (0, 0, 100, 20)}
+    return {"text": text, "page": page, "font_size": font_size, "is_bold": is_bold, "bbox": (0, 0, 100, 20)}
 
 
 def _heading_block(text: str, page: int = 1, font_size: float = 14.0, is_bold: bool = True) -> dict:
@@ -299,6 +299,37 @@ def test_chunk_index_sequential():
     return ok
 
 
+def test_chunk_text_non_empty_for_embedding():
+    """Every chunk must have non-empty .text so the embedding layer always has input."""
+    blocks = [
+        _heading_block("1 Oversikt"),
+        _block("Innhold under oversikt."),
+        _heading_block("2 Detaljer"),
+        _block("Innhold under detaljer."),
+        _block(""),              # empty block — should not create empty chunk text
+        _block("   "),           # whitespace-only — likewise
+        _heading_block("3 Oppsummering"),
+        _block("Siste avsnitt."),
+    ]
+    chunks = chunk_document(blocks, document_name="EmbTest", source_blob="emb.pdf")
+
+    ok = True
+    for c in chunks:
+        ok &= assert_true(
+            f"chunk {c['chunk_index']} has non-empty text",
+            bool(c["text"].strip()),
+        )
+    return ok
+
+
+def test_block_helper_is_bold():
+    """Verify _block() respects the is_bold parameter (regression guard)."""
+    ok = True
+    ok &= assert_equal("_block default is_bold=False", _block("x")["is_bold"], False)
+    ok &= assert_equal("_block explicit is_bold=True",  _block("x", is_bold=True)["is_bold"], True)
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
@@ -315,6 +346,8 @@ def main():
         ("Edge case: blocks without font metadata",          test_blocks_without_font_metadata),
         ("blocks_to_text: joining and filtering",            test_blocks_to_text),
         ("chunk_index is sequential from 0",                 test_chunk_index_sequential),
+        ("Chunk text non-empty (embedding contract)",        test_chunk_text_non_empty_for_embedding),
+        ("_block() helper respects is_bold",                 test_block_helper_is_bold),
     ]
 
     passed = 0

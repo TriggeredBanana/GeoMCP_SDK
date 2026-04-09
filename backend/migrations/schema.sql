@@ -115,3 +115,18 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw
 
 CREATE INDEX IF NOT EXISTS idx_chunks_search_vector
     ON chunks USING GIN (search_vector);
+
+-- Trigger: auto-populate search_vector on INSERT/UPDATE (mirrors documents trigger)
+CREATE OR REPLACE FUNCTION chunks_search_vector_update() RETURNS trigger AS $$
+BEGIN
+    NEW.search_vector := to_tsvector('norwegian', COALESCE(NEW.text, ''));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_chunks_search_vector ON chunks;
+CREATE TRIGGER trg_chunks_search_vector
+    BEFORE INSERT OR UPDATE OF text
+    ON chunks
+    FOR EACH ROW
+    EXECUTE FUNCTION chunks_search_vector_update();

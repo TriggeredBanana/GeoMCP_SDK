@@ -205,8 +205,13 @@ class SessionManager:
         else:
             full_message = message
 
+        # Refresh activity timestamp so cleanup_expired() doesn't reap the
+        # session while a long send_and_wait() is in-flight.
+        if chat_id and chat_id in self.last_active:
+            self.last_active[chat_id] = datetime.now(timezone.utc)
+
         try:
-            response = await session.send_and_wait({"prompt": full_message}, timeout=180)
+            response = await session.send_and_wait({"prompt": full_message}, timeout=900)
         except Exception:
             # Evict the broken session so the next request creates a fresh one
             # instead of retrying against a permanently dead session.
@@ -218,6 +223,10 @@ class SessionManager:
                     chat_id,
                 )
             raise
+
+        # Refresh again after the (potentially long) call completes.
+        if chat_id and chat_id in self.last_active:
+            self.last_active[chat_id] = datetime.now(timezone.utc)
 
         content = response.data.content
         map_actions = get_and_clear_shapes(chat_id)

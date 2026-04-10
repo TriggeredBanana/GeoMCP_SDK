@@ -6,8 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, cast
 
 from copilot import CopilotClient
-from copilot.session import PermissionHandler
-from copilot.types import PermissionRequestResult
+from copilot.session import PermissionHandler, PermissionRequestResult
 from mcp_servers.map_server import get_and_clear_shapes
 from usage_tracker import get_or_create_tracker, discard_tracker
 from config import (

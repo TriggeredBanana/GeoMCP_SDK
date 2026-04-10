@@ -608,6 +608,13 @@ async def query_database(sql: str) -> str:
     queries against approved Atlas data tables are permitted. Results are capped to
     200 rows and run with a statement timeout.
 
+    Key schema notes (call describe_table for full details):
+    - documents: id, title, content, source_blob, indexing_status, ...
+    - chunks:    id, document_id, chunk_index, text (NOT content), heading_path,
+                 section_title, section_number, page_start, page_end,
+                 topic_type, alternative, delomrade, embedding, ...
+    - chunks.text holds the chunk body; documents.content holds the full document text.
+
     Args:
         sql: A single read-only SELECT query. WITH ... SELECT is supported.
     """

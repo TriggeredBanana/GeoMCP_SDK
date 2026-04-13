@@ -163,6 +163,17 @@ def test_heading_detection():
     ok &= assert_true("KU keyword heading detected",
         _is_heading({"text": "Verdivurdering", "font_size": 11.0, "is_bold": False}, body_size))
 
+    # Heading-like keyword phrase should still count
+    ok &= assert_true("keyword heading phrase detected",
+        _is_heading({"text": "Sammendrag av eksisterende kunnskap", "font_size": 11.0, "is_bold": False}, body_size))
+
+    # Plain sentence starting with a KU keyword should NOT be promoted to heading
+    ok &= assert_true("keyword-led body sentence not a heading",
+        not _is_heading({"text": "Metode og datagrunnlag er beskrevet nedenfor.", "font_size": 11.0, "is_bold": False}, body_size))
+
+    ok &= assert_true("keyword-led body sentence without punctuation not a heading",
+        not _is_heading({"text": "Metode er beskrevet nedenfor", "font_size": 11.0, "is_bold": False}, body_size))
+
     # Normal body text should NOT be a heading
     ok &= assert_true("normal body text not a heading",
         not _is_heading({"text": "Utredningen viser at tiltaket medfører middels konsekvens.", "font_size": 11.0, "is_bold": False}, body_size))

@@ -293,6 +293,45 @@ async def hybrid_search(search_query: str, limit: int = 10) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Chunk retrieval helper
+# ---------------------------------------------------------------------------
+
+async def get_chunk_by_id(chunk_id: int) -> dict | None:
+    """
+    Fetch the full text and metadata for a single chunk by its primary key.
+
+    Semantic search returns truncated content (300 chars) together with the
+    chunk_id. Use this function to retrieve the complete chunk when the full
+    text is needed (e.g. before passing it to an LLM for answer generation).
+
+    Returns None if the chunk does not exist.
+    """
+    rows = await query(
+        """
+        SELECT
+            c.id            AS chunk_id,
+            c.document_id,
+            d.title         AS document_title,
+            c.text          AS content,
+            c.heading_path,
+            c.section_title,
+            c.topic_type,
+            c.alternative,
+            c.delomrade,
+            c.contains_table,
+            c.page_start,
+            c.page_end,
+            c.chunk_index
+        FROM chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE c.id = %(chunk_id)s;
+        """,
+        {"chunk_id": chunk_id},
+    )
+    return rows[0] if rows else None
+
+
+# ---------------------------------------------------------------------------
 # Embedding helper
 # ---------------------------------------------------------------------------
 

@@ -191,6 +191,7 @@ def _run_process(
     blocks_text="content here",  # return value of chunker.blocks_to_text
     save_chunks_returns=(3, 3),  # (total_inserted, embedded_count)
     extract_blocks_raises=None,  # if set, extract_blocks raises this
+    extract_text_returns="",     # return value of extract_text() fallback
     generate_emb_returns=None,   # return value of generate_embeddings
 ):
     if claim_returns is None:
@@ -205,6 +206,7 @@ def _run_process(
         with (
             patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_q,
             patch.object(ingest_pipeline, "extract_blocks", new_callable=AsyncMock) as mock_eb,
+            patch.object(ingest_pipeline, "extract_text", new_callable=AsyncMock) as mock_et,
             patch.object(ingest_pipeline, "save_indexed_document", new_callable=AsyncMock) as mock_sid,
             patch.object(ingest_pipeline, "save_chunks", new_callable=AsyncMock) as mock_sc,
             patch.object(ingest_pipeline, "update_index_status", new_callable=AsyncMock) as mock_uis,
@@ -218,6 +220,7 @@ def _run_process(
                 mock_eb.side_effect = extract_blocks_raises
             else:
                 mock_eb.return_value = [{"text": "block"}]
+            mock_et.return_value = extract_text_returns
             mock_sid.return_value = 1
             mock_sc.return_value = save_chunks_returns
             mock_ge.return_value = generate_emb_returns
@@ -299,61 +302,74 @@ print("\n# process_document status transitions")
 
 
 def test_already_processing_is_skipped():
-    """Atomic claim returns no row → document already processing → result=skipped."""
+    """Atomic claim returns no row -> document already processing -> result=skipped."""
     result, _ = _run_process(claim_returns=[])
-    assert_equal("already-processing → skipped", result["status"], "skipped")
+    assert_equal("already-processing -> skipped", result["status"], "skipped")
 
 
 def test_all_chunks_embedded_sets_ready():
-    """embedded_count == chunk_count → indexing_status=ready, result=ok."""
+    """embedded_count == chunk_count -> indexing_status=ready, result=ok."""
     result, mock_uis = _run_process(save_chunks_returns=(3, 3))
-    assert_equal("all embedded → result ok", result["status"], "ok")
-    assert_equal("all embedded → indexing_status=ready", mock_uis.call_args.args[1], "ready")
+    assert_equal("all embedded -> result ok", result["status"], "ok")
+    assert_equal("all embedded -> indexing_status=ready", mock_uis.call_args.args[1], "ready")
 
 
 def test_partial_embeddings_sets_partial():
-    """Some but not all chunks embedded → indexing_status=partial, result=partial."""
+    """Some but not all chunks embedded -> indexing_status=partial, result=partial."""
     result, mock_uis = _run_process(save_chunks_returns=(3, 1))
-    assert_equal("partial embed → result partial", result["status"], "partial")
-    assert_equal("partial embed → indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    assert_equal("partial embed -> result partial", result["status"], "partial")
+    assert_equal("partial embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
 
 
 def test_zero_embeddings_no_fallback_sets_partial():
-    """No chunk embeddings, doc-level fallback also fails → indexing_status=partial."""
+    """No chunk embeddings, doc-level fallback also fails -> indexing_status=partial."""
     result, mock_uis = _run_process(
         save_chunks_returns=(3, 0),
         generate_emb_returns=None,  # fallback fails too
     )
-    assert_equal("no embed → result partial", result["status"], "partial")
-    assert_equal("no embed → indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    assert_equal("no embed -> result partial", result["status"], "partial")
+    assert_equal("no embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
 
 
 def test_zero_embeddings_with_doc_fallback_sets_partial():
-    """No chunk embeddings but doc-level fallback succeeds → still partial (not ready)."""
+    """No chunk embeddings but doc-level fallback succeeds -> still partial (not ready)."""
     result, mock_uis = _run_process(
         save_chunks_returns=(3, 0),
         generate_emb_returns=[0.1] * 10,  # doc-level fallback succeeds
     )
-    # has_any_embedding=True but all_chunks_embedded=False → partial
-    assert_equal("doc-fallback embed → result partial", result["status"], "partial")
-    assert_equal("doc-fallback embed → indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    # has_any_embedding=True but all_chunks_embedded=False -> partial
+    assert_equal("doc-fallback embed -> result partial", result["status"], "partial")
+    assert_equal("doc-fallback embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
+
+
+def test_zero_chunks_with_doc_fallback_sets_ready():
+    """No chunks plus a document-level fallback embedding -> ready, not partial."""
+    result, mock_uis = _run_process(
+        chunks=[],
+        blocks_text="",
+        save_chunks_returns=(0, 0),
+        extract_text_returns="plain text fallback content",
+        generate_emb_returns=[0.1] * 10,
+    )
+    assert_equal("0 chunks + doc fallback -> result ok", result["status"], "ok")
+    assert_equal("0 chunks + doc fallback -> indexing_status=ready", mock_uis.call_args.args[1], "ready")
 
 
 def test_extraction_error_sets_failed():
-    """Exception during extract_blocks → indexing_status=failed, result=error."""
+    """Exception during extract_blocks -> indexing_status=failed, result=error."""
     result, mock_uis = _run_process(extract_blocks_raises=RuntimeError("PDF corrupt"))
-    assert_equal("extract error → result error", result["status"], "error")
-    assert_equal("extract error → indexing_status=failed", mock_uis.call_args.args[1], "failed")
+    assert_equal("extract error -> result error", result["status"], "error")
+    assert_equal("extract error -> indexing_status=failed", mock_uis.call_args.args[1], "failed")
 
 
 def test_single_chunk_fully_embedded_is_ready():
-    """Edge case: 1 chunk, 1 embedding → ready (not partial)."""
+    """Edge case: 1 chunk, 1 embedding -> ready (not partial)."""
     result, mock_uis = _run_process(
         chunks=_fake_chunks(1),
         save_chunks_returns=(1, 1),
     )
-    assert_equal("1 chunk fully embedded → ok", result["status"], "ok")
-    assert_equal("1 chunk fully embedded → ready", mock_uis.call_args.args[1], "ready")
+    assert_equal("1 chunk fully embedded -> ok", result["status"], "ok")
+    assert_equal("1 chunk fully embedded -> ready", mock_uis.call_args.args[1], "ready")
 
 
 # ===========================================================================
@@ -377,6 +393,33 @@ def test_save_chunks_empty_still_deletes_existing_rows():
         sql, params = fake_cursor.execute_calls[0]
         assert_in("empty save_chunks deletes old rows", "DELETE FROM chunks", sql)
         assert_equal("delete targets the current document", params["doc_id"], 123)
+
+    asyncio.run(go())
+
+
+def test_save_chunks_refreshes_processing_lease_when_requested():
+    """Embedding batches should refresh the processing lease for long-running work."""
+    async def go():
+        fake_cursor = _FakeCursor()
+        fake_conn = _FakeConnection(fake_cursor)
+
+        with (
+            patch.object(ingest_pipeline, "get_connection", return_value=fake_conn),
+            patch.object(ingest_pipeline, "refresh_processing_lease", new_callable=AsyncMock) as mock_touch,
+            patch.object(ingest_pipeline, "_insert_chunk", new_callable=AsyncMock) as mock_insert,
+            patch("embedding_client.get_embeddings", new_callable=AsyncMock) as mock_embed,
+        ):
+            mock_insert.side_effect = [10, 11]
+            mock_embed.return_value = [[0.1, 0.2], [0.3, 0.4]]
+
+            result = await ingest_pipeline.save_chunks(
+                123,
+                _fake_chunks(2),
+                lease_blob_name="doc.pdf",
+            )
+
+            assert_equal("save_chunks with lease returns counts", result, (2, 2))
+            assert_true("save_chunks refreshes processing lease", mock_touch.await_count >= 1)
 
     asyncio.run(go())
 
@@ -523,10 +566,12 @@ _TESTS = [
     test_partial_embeddings_sets_partial,
     test_zero_embeddings_no_fallback_sets_partial,
     test_zero_embeddings_with_doc_fallback_sets_partial,
+    test_zero_chunks_with_doc_fallback_sets_ready,
     test_extraction_error_sets_failed,
     test_single_chunk_fully_embedded_is_ready,
     # save_chunks cleanup
     test_save_chunks_empty_still_deletes_existing_rows,
+    test_save_chunks_refreshes_processing_lease_when_requested,
     # search filtering
     test_full_text_search_filters_status,
     test_fuzzy_search_filters_status,

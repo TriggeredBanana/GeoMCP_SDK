@@ -103,7 +103,9 @@ _KU_SECTION_KEYWORDS: set[str] = {
     "usikkerhet", "kunnskapsmangler",
     "referanser", "litteratur", "kilder", "vedlegg",
 }
-_KU_KEYWORD_MAX_SUFFIX_CHARS = 40
+_KU_KEYWORD_MAX_SUFFIX_CHARS = 25
+_KU_KEYWORD_MAX_WORDS = 6
+_KU_KEYWORD_PREFIX_CONNECTORS = {"av", "for", "og", "om", "-", "–", ":", "("}
 
 # ---------------------------------------------------------------------------
 # Topic classification rules (first match wins)
@@ -216,14 +218,29 @@ def _parse_numbered_heading(text: str) -> Optional[tuple[str, str, int]]:
 
 def _is_known_ku_keyword(text: str) -> bool:
     """Return True if text (lowercased, stripped) matches a known KU section keyword."""
-    lower = text.strip().lower()
+    lower = " ".join(text.strip().lower().split())
+    if not lower:
+        return False
     if lower in _KU_SECTION_KEYWORDS:
         return True
-    # Allow short heading-like prefix forms such as "Sammendrag: ..."
-    # while excluding paragraph-length body text that merely starts the same way.
+
+    # Prefix matching is intentionally conservative. It is meant to keep
+    # heading-like phrases such as "Sammendrag av konsekvens..." or
+    # "Metode og datagrunnlag", but avoid promoting ordinary body sentences
+    # like "Metode og datagrunnlag er beskrevet nedenfor." to headings.
+    if lower.endswith((".", "!", "?")):
+        return False
+    if len(lower.split()) > _KU_KEYWORD_MAX_WORDS:
+        return False
+
     for kw in _KU_SECTION_KEYWORDS:
-        if lower.startswith(kw) and len(lower) < len(kw) + _KU_KEYWORD_MAX_SUFFIX_CHARS:
-            return True
+        if lower.startswith(kw) and len(lower) <= len(kw) + _KU_KEYWORD_MAX_SUFFIX_CHARS:
+            suffix = lower[len(kw):].strip()
+            if not suffix:
+                return True
+            first_token = suffix.split(maxsplit=1)[0]
+            if first_token in _KU_KEYWORD_PREFIX_CONNECTORS:
+                return True
     return False
 
 

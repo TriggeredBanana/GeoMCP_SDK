@@ -1,4 +1,5 @@
 import { ChatInterface } from './ChatInterface';
+import { ToolList } from './ToolList';
 import { KartlagPanel } from './KartlagPanel';
 import { ExportPanel } from './ExportPanel';
 
@@ -8,7 +9,7 @@ import { ExportPanel } from './ExportPanel';
  * Keeps ChatInterface mounted even when the user switches panels so the
  * active conversation, auth state, and in-progress input do not reset.
  */
-export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, chatUser, onUserChange, onLayerCreated, panelWidth }) {
+export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetDrawnLayerVisible, onRemoveDrawnLayer, onFlyToLayer, chatUser, onUserChange, onLayerCreated, selectedTools, onToggleTool, onClearSelectedTools, onGoToChat, panelWidth }) {
     const isOpen = !!activePanel;
 
     const panelStyle = isOpen && panelWidth !== null
@@ -31,6 +32,9 @@ export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetD
                     onLayerCreated={onLayerCreated}
                     externalUser={chatUser}
                     onUserChange={onUserChange}
+                    selectedTools={selectedTools}
+                    onClearSelectedTools={onClearSelectedTools}
+                    onRemoveTool={onToggleTool}
                 />
             </div>
 
@@ -44,13 +48,11 @@ export function ContentPanel({ activePanel, onClose, layers, drawnLayers, onSetD
                 />
             )}
 
-            {activePanel === 'Analyse' && (
-                <Analysis
-                    layers={layers}
-                    drawnLayers={drawnLayers}
-                    onSetDrawnLayerVisible={onSetDrawnLayerVisible}
-                    onRemoveDrawnLayer={onRemoveDrawnLayer}
-                    onFlyToLayer={onFlyToLayer}
+            {activePanel === 'Verktøy' && (
+                <ToolList
+                    selectedTools={selectedTools}
+                    onToggleTool={onToggleTool}
+                    onGoToChat={onGoToChat}
                 />
             )}
 

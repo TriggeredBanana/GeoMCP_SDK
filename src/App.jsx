@@ -6,13 +6,13 @@ import { ContentPanel } from './components/ContentPanel.jsx';
 import Map from './components/Map.jsx';
 import { apiFetch, clearToken, clearActiveChatId, getToken } from './utils/auth';
 
-import { faLayerGroup, faChartLine, faFileExport } from '@fortawesome/free-solid-svg-icons';
+import { faLayerGroup, faWrench, faFileExport } from '@fortawesome/free-solid-svg-icons';
 import { faMessage } from '@fortawesome/free-regular-svg-icons';
 
 const menuItems = [
     { id: 'Chatbot', label: 'Chatbot', icon: faMessage },
     { id: 'Kartlag', label: 'Kartlag', icon: faLayerGroup },
-    { id: 'Analyse', label: 'Analyse', icon: faChartLine },
+    { id: 'Verktøy', label: 'Verktøy', icon: faWrench },
     { id: 'Eksporter', label: 'Eksporter', icon: faFileExport },
 ];
 
@@ -29,22 +29,34 @@ function App() {
   const dragStartXRef = useRef(0);
   const dragStartWidthRef = useRef(0);
 
+  const getPanelResizeBounds = useCallback(() => {
+    const sidebarWidth = sidebarCollapsed ? 64 : 240;
+    const availableWidth = Math.max(window.innerWidth - sidebarWidth - 48, 280);
+    const maxWidth = Math.min(Math.round(window.innerWidth * 0.65), availableWidth);
+    const minWidth = Math.min(320, maxWidth);
+    return { minWidth, maxWidth };
+  }, [sidebarCollapsed]);
+
   const handlePanelResizeMouseDown = useCallback((e) => {
     e.preventDefault();
+    const { minWidth, maxWidth } = getPanelResizeBounds();
+    const defaultWidth = Math.round(window.innerWidth * 0.4);
     isDraggingRef.current = true;
     setIsPanelDragging(true);
     dragStartXRef.current = e.clientX;
-    dragStartWidthRef.current = panelWidth ?? Math.round(window.innerWidth * 0.4);
+    dragStartWidthRef.current = panelWidth === null
+      ? Math.max(minWidth, Math.min(defaultWidth, maxWidth))
+      : panelWidth;
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-  }, [panelWidth]);
+  }, [getPanelResizeBounds, panelWidth]);
 
   useEffect(() => {
     const onMouseMove = (e) => {
       if (!isDraggingRef.current) return;
       const delta = e.clientX - dragStartXRef.current;
-      const maxWidth = Math.round(window.innerWidth * 0.65);
-      const newWidth = Math.max(320, Math.min(dragStartWidthRef.current + delta, maxWidth));
+      const { minWidth, maxWidth } = getPanelResizeBounds();
+      const newWidth = Math.max(minWidth, Math.min(dragStartWidthRef.current + delta, maxWidth));
       setPanelWidth(newWidth);
     };
     const onMouseUp = () => {
@@ -60,7 +72,21 @@ function App() {
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-  }, []);
+  }, [getPanelResizeBounds]);
+
+  useEffect(() => {
+    const clampPanelWidth = () => {
+      setPanelWidth(currentWidth => {
+        if (currentWidth === null) return currentWidth;
+        const { minWidth, maxWidth } = getPanelResizeBounds();
+        return Math.max(minWidth, Math.min(currentWidth, maxWidth));
+      });
+    };
+
+    clampPanelWidth();
+    window.addEventListener('resize', clampPanelWidth);
+    return () => window.removeEventListener('resize', clampPanelWidth);
+  }, [getPanelResizeBounds]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -131,6 +157,17 @@ function App() {
   ]);
 
   const [drawnLayers, setDrawnLayers] = useState([]);
+  const [selectedTools, setSelectedTools] = useState([]);
+
+  const toggleTool = (tool) => {
+    setSelectedTools(prev => {
+      const exists = prev.some(t => t.name === tool.name);
+      if (exists) return prev.filter(t => t.name !== tool.name);
+      return [...prev, tool];
+    });
+  };
+
+  const clearSelectedTools = () => setSelectedTools([]);
 
   const upsertDrawnLayer = (info) => {
     setDrawnLayers(previousLayers => {
@@ -210,6 +247,10 @@ function App() {
           onFlyToLayer={setFlyTarget}
           chatUser={chatUser}
           onUserChange={setChatUser}
+          selectedTools={selectedTools}
+          onToggleTool={toggleTool}
+          onClearSelectedTools={clearSelectedTools}
+          onGoToChat={() => setActivePanel('Chatbot')}
           panelWidth={panelWidth} />
 
         {activePanel && (

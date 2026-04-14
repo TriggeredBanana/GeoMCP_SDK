@@ -30,8 +30,8 @@ logging.disable(logging.CRITICAL)
 
 def _stub(name: str, **attrs):
     mod = types.ModuleType(name)
-    for k, v in attrs.items():
-        setattr(mod, k, v)
+    for attr_name, attr_value in attrs.items():
+        setattr(mod, attr_name, attr_value)
     sys.modules[name] = mod
     return mod
 
@@ -100,13 +100,13 @@ def assert_in(label: str, needle: str, haystack: str) -> bool:
     return False
 
 
-def _run_test(fn):
+def _run_test(test_function):
     try:
-        fn()
-    except Exception as exc:
+        test_function()
+    except Exception as exception:
         global _failed
         _failed += 1
-        print(f"  FAIL  {fn.__name__}: raised {type(exc).__name__}: {exc}")
+        print(f"  FAIL  {test_function.__name__}: raised {type(exception).__name__}: {exception}")
 
 
 # ---------------------------------------------------------------------------
@@ -117,17 +117,17 @@ def _blob(name="doc.pdf", last_modified="2024-01-01", file_hash="abc"):
     return {"name": name, "last_modified": last_modified, "file_hash": file_hash}
 
 
-def _fake_chunks(n: int) -> list[dict]:
+def _fake_chunks(count: int) -> list[dict]:
     return [
         {
-            "local_id": i,
+            "local_id": chunk_num,
             "local_parent_id": None,
-            "chunk_index": i,
-            "text": f"chunk {i}",
+            "chunk_index": chunk_num,
+            "text": f"chunk {chunk_num}",
             "char_count": 7,
             "metadata": {},
         }
-        for i in range(n)
+        for chunk_num in range(count)
     ]
 
 
@@ -138,10 +138,10 @@ class _FakeCursor:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exception_type, exception_value, traceback_value):
         return False
 
-    async def execute(self, sql, params=None):
+    async def execute(self, query_sql, params=None):
         return None
 
     async def fetchone(self):
@@ -154,7 +154,7 @@ class _FakeTransaction:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exception_type, exception_value, traceback_value):
         return False
 
 
@@ -165,7 +165,7 @@ class _FakeConnection:
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
+    async def __aexit__(self, exception_type, exception_value, traceback_value):
         return False
 
     def transaction(self):
@@ -195,35 +195,35 @@ def _run_process(
         chunks = _fake_chunks(3)
 
     result_holder = {}
-    mock_uis_holder = {}
+    mock_update_index_status_holder = {}
 
-    async def go():
+    async def run_coroutine():
         with (
-            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_q,
-            patch.object(ingest_pipeline, "extract_blocks", new_callable=AsyncMock) as mock_eb,
-            patch.object(ingest_pipeline, "save_indexed_document", new_callable=AsyncMock) as mock_sid,
-            patch.object(ingest_pipeline, "save_chunks", new_callable=AsyncMock) as mock_sc,
-            patch.object(ingest_pipeline, "update_index_status", new_callable=AsyncMock) as mock_uis,
+            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_query,
+            patch.object(ingest_pipeline, "extract_blocks", new_callable=AsyncMock) as mock_extract_blocks,
+            patch.object(ingest_pipeline, "save_indexed_document", new_callable=AsyncMock) as mock_save_indexed_document,
+            patch.object(ingest_pipeline, "save_chunks", new_callable=AsyncMock) as mock_save_chunks,
+            patch.object(ingest_pipeline, "update_index_status", new_callable=AsyncMock) as mock_update_index_status,
             patch.object(ingest_pipeline, "execute", new_callable=AsyncMock),
-            patch.object(ingest_pipeline, "generate_embeddings", new_callable=AsyncMock) as mock_ge,
+            patch.object(ingest_pipeline, "generate_embeddings", new_callable=AsyncMock) as mock_generate_embeddings,
             patch("chunker.chunk_document", return_value=chunks),
             patch("chunker.blocks_to_text", return_value=blocks_text),
         ):
-            mock_q.return_value = claim_returns
+            mock_query.return_value = claim_returns
             if extract_blocks_raises:
-                mock_eb.side_effect = extract_blocks_raises
+                mock_extract_blocks.side_effect = extract_blocks_raises
             else:
-                mock_eb.return_value = [{"text": "block"}]
-            mock_sid.return_value = 1
-            mock_sc.return_value = save_chunks_returns
-            mock_ge.return_value = generate_emb_returns
+                mock_extract_blocks.return_value = [{"text": "block"}]
+            mock_save_indexed_document.return_value = 1
+            mock_save_chunks.return_value = save_chunks_returns
+            mock_generate_embeddings.return_value = generate_emb_returns
 
             result = await ingest_pipeline.process_document(_blob())
             result_holder["result"] = result
-            mock_uis_holder["mock"] = mock_uis
+            mock_update_index_status_holder["mock"] = mock_update_index_status
 
-    asyncio.run(go())
-    return result_holder["result"], mock_uis_holder["mock"]
+    asyncio.run(run_coroutine())
+    return result_holder["result"], mock_update_index_status_holder["mock"]
 
 
 # ===========================================================================
@@ -235,56 +235,56 @@ print("\n# Stale-processing recovery")
 
 def test_stale_reclaim_sql_resets_to_new():
     """The reclaim UPDATE must target processing rows and reset them to 'new'."""
-    async def go():
+    async def run_coroutine():
         with (
-            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_q,
-            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_disc,
+            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_query,
+            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_discover_documents,
         ):
-            mock_q.return_value = [{"source_blob": "stale.pdf"}]
-            mock_disc.return_value = []
+            mock_query.return_value = [{"source_blob": "stale.pdf"}]
+            mock_discover_documents.return_value = []
             await ingest_pipeline.run_pipeline()
 
-            sql, params = mock_q.call_args.args
-            assert_in("reclaim SQL resets to 'new'", "indexing_status = 'new'", sql)
-            assert_in("reclaim SQL targets 'processing' rows", "indexing_status = 'processing'", sql)
-            assert_in("reclaim SQL uses updated_at lease", "updated_at", sql)
+            captured_sql, params = mock_query.call_args.args
+            assert_in("reclaim SQL resets to 'new'", "indexing_status = 'new'", captured_sql)
+            assert_in("reclaim SQL targets 'processing' rows", "indexing_status = 'processing'", captured_sql)
+            assert_in("reclaim SQL uses updated_at lease", "updated_at", captured_sql)
             assert_equal(
                 "reclaim uses _STALE_PROCESSING_MINUTES constant",
                 params["mins"],
                 ingest_pipeline._STALE_PROCESSING_MINUTES,
             )
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_no_stale_rows_pipeline_succeeds():
     """When the reclaim query returns no rows, run_pipeline completes cleanly."""
-    async def go():
+    async def run_coroutine():
         with (
-            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_q,
-            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_disc,
+            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_query,
+            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_discover_documents,
         ):
-            mock_q.return_value = []   # nothing to reclaim
-            mock_disc.return_value = []
+            mock_query.return_value = []   # nothing to reclaim
+            mock_discover_documents.return_value = []
             result = await ingest_pipeline.run_pipeline()
             assert_equal("pipeline succeeds with no stale rows", result["status"], "ok")
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_discover_called_after_reclaim():
     """discover_documents is always called after reclaim so unlocked docs can be re-indexed."""
-    async def go():
+    async def run_coroutine():
         with (
-            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_q,
-            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_disc,
+            patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_query,
+            patch.object(ingest_pipeline, "discover_documents", new_callable=AsyncMock) as mock_discover_documents,
         ):
-            mock_q.return_value = [{"source_blob": "stale.pdf"}]
-            mock_disc.return_value = []
+            mock_query.return_value = [{"source_blob": "stale.pdf"}]
+            mock_discover_documents.return_value = []
             await ingest_pipeline.run_pipeline()
-            assert_true("discover_documents called after reclaim", mock_disc.called)
+            assert_true("discover_documents called after reclaim", mock_discover_documents.called)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 # ===========================================================================
@@ -302,65 +302,65 @@ def test_already_processing_is_skipped():
 
 def test_all_chunks_embedded_sets_ready():
     """embedded_count == chunk_count -> indexing_status=ready, result=ok."""
-    result, mock_uis = _run_process(save_chunks_returns=(3, 3))
+    result, mock_update_index_status = _run_process(save_chunks_returns=(3, 3))
     assert_equal("all embedded -> result ok", result["status"], "ok")
-    assert_equal("all embedded -> indexing_status=ready", mock_uis.call_args.args[1], "ready")
+    assert_equal("all embedded -> indexing_status=ready", mock_update_index_status.call_args.args[1], "ready")
 
 
 def test_partial_embeddings_sets_partial():
     """Some but not all chunks embedded -> indexing_status=partial, result=partial."""
-    result, mock_uis = _run_process(save_chunks_returns=(3, 1))
+    result, mock_update_index_status = _run_process(save_chunks_returns=(3, 1))
     assert_equal("partial embed -> result partial", result["status"], "partial")
-    assert_equal("partial embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    assert_equal("partial embed -> indexing_status=partial", mock_update_index_status.call_args.args[1], "partial")
 
 
 def test_zero_embeddings_no_fallback_sets_partial():
     """No chunk embeddings, doc-level fallback also fails -> indexing_status=partial."""
-    result, mock_uis = _run_process(
+    result, mock_update_index_status = _run_process(
         save_chunks_returns=(3, 0),
         generate_emb_returns=None,  # fallback fails too
     )
     assert_equal("no embed -> result partial", result["status"], "partial")
-    assert_equal("no embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    assert_equal("no embed -> indexing_status=partial", mock_update_index_status.call_args.args[1], "partial")
 
 
 def test_zero_embeddings_with_doc_fallback_sets_partial():
     """No chunk embeddings but doc-level fallback succeeds -> still partial (not ready)."""
-    result, mock_uis = _run_process(
+    result, mock_update_index_status = _run_process(
         save_chunks_returns=(3, 0),
         generate_emb_returns=[0.1] * 10,  # doc-level fallback succeeds
     )
     # has_any_embedding=True but all_chunks_embedded=False -> partial
     assert_equal("doc-fallback embed -> result partial", result["status"], "partial")
-    assert_equal("doc-fallback embed -> indexing_status=partial", mock_uis.call_args.args[1], "partial")
+    assert_equal("doc-fallback embed -> indexing_status=partial", mock_update_index_status.call_args.args[1], "partial")
 
 
 def test_extraction_error_sets_failed():
     """Exception during extract_blocks -> indexing_status=failed, result=error."""
-    result, mock_uis = _run_process(extract_blocks_raises=RuntimeError("PDF corrupt"))
+    result, mock_update_index_status = _run_process(extract_blocks_raises=RuntimeError("PDF corrupt"))
     assert_equal("extract error -> result error", result["status"], "error")
-    assert_equal("extract error -> indexing_status=failed", mock_uis.call_args.args[1], "failed")
+    assert_equal("extract error -> indexing_status=failed", mock_update_index_status.call_args.args[1], "failed")
 
 
 def test_single_chunk_fully_embedded_is_ready():
     """Edge case: 1 chunk, 1 embedding -> ready (not partial)."""
-    result, mock_uis = _run_process(
+    result, mock_update_index_status = _run_process(
         chunks=_fake_chunks(1),
         save_chunks_returns=(1, 1),
     )
     assert_equal("1 chunk fully embedded -> ok", result["status"], "ok")
-    assert_equal("1 chunk fully embedded -> ready", mock_uis.call_args.args[1], "ready")
+    assert_equal("1 chunk fully embedded -> ready", mock_update_index_status.call_args.args[1], "ready")
 
 
 def test_save_chunks_refreshes_processing_lease_between_batches():
     """save_chunks refreshes the processing lease while batched embeddings run."""
-    async def go():
+    async def run_coroutine():
         fake_cursor = _FakeCursor([101, 102, 103])
         fake_conn = _FakeConnection(fake_cursor)
 
         with (
             patch.object(ingest_pipeline, "get_connection", return_value=fake_conn),
-            patch.object(ingest_pipeline, "refresh_processing_lease", new_callable=AsyncMock) as mock_refresh,
+            patch.object(ingest_pipeline, "refresh_processing_lease", new_callable=AsyncMock) as mock_refresh_lease,
             patch("embedding_client.get_embeddings", new=AsyncMock(side_effect=[
                 [[0.1] * 3, [0.2] * 3],
                 [[0.3] * 3],
@@ -376,10 +376,10 @@ def test_save_chunks_refreshes_processing_lease_between_batches():
             assert_equal("save_chunks counts embedded chunks", embedded, 3)
             assert_true(
                 "processing lease refreshed during batched embeddings",
-                mock_refresh.await_count >= 2,
+                mock_refresh_lease.await_count >= 2,
             )
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 # ===========================================================================
@@ -393,61 +393,61 @@ _STATUS_FILTER = "indexing_status IN ('ready', 'partial')"
 
 def test_full_text_search_filters_status():
     """search_full_text SQL must exclude new/processing/failed documents."""
-    async def go():
-        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_q:
-            mock_q.return_value = []
+    async def run_coroutine():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = []
             await search_service.search_full_text("regelverk")
-            sql = mock_q.call_args.args[0]
-            assert_in("full_text filters by status", _STATUS_FILTER, sql)
+            captured_sql = mock_query.call_args.args[0]
+            assert_in("full_text filters by status", _STATUS_FILTER, captured_sql)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_fuzzy_search_filters_status():
     """search_fuzzy SQL must exclude new/processing/failed documents."""
-    async def go():
-        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_q:
-            mock_q.return_value = []
+    async def run_coroutine():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = []
             await search_service.search_fuzzy("regelverk")
-            sql = mock_q.call_args.args[0]
-            assert_in("fuzzy search filters by status", _STATUS_FILTER, sql)
+            captured_sql = mock_query.call_args.args[0]
+            assert_in("fuzzy search filters by status", _STATUS_FILTER, captured_sql)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_semantic_chunk_search_filters_status():
     """_search_semantic_chunks SQL must exclude non-searchable documents."""
-    async def go():
-        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_q:
-            mock_q.return_value = []
+    async def run_coroutine():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = []
             await search_service._search_semantic_chunks([0.1] * 10, "regelverk", 10)
-            sql = mock_q.call_args.args[0]
-            assert_in("semantic chunk search filters by status", _STATUS_FILTER, sql)
+            captured_sql = mock_query.call_args.args[0]
+            assert_in("semantic chunk search filters by status", _STATUS_FILTER, captured_sql)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_semantic_document_fallback_filters_status():
     """_search_semantic_documents SQL must exclude non-searchable documents."""
-    async def go():
-        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_q:
-            mock_q.return_value = []
+    async def run_coroutine():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = []
             await search_service._search_semantic_documents([0.1] * 10, "regelverk", 10)
-            sql = mock_q.call_args.args[0]
-            assert_in("semantic doc fallback filters by status", _STATUS_FILTER, sql)
+            captured_sql = mock_query.call_args.args[0]
+            assert_in("semantic doc fallback filters by status", _STATUS_FILTER, captured_sql)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 def test_full_text_empty_query_skips_db():
     """search_full_text with blank query returns [] without hitting the DB."""
-    async def go():
-        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_q:
+    async def run_coroutine():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
             result = await search_service.search_full_text("   ")
             assert_equal("empty query returns []", result, [])
-            assert_equal("empty query skips DB", mock_q.called, False)
+            assert_equal("empty query skips DB", mock_query.called, False)
 
-    asyncio.run(go())
+    asyncio.run(run_coroutine())
 
 
 # ===========================================================================
@@ -477,8 +477,8 @@ _TESTS = [
 ]
 
 if __name__ == "__main__":
-    for test_fn in _TESTS:
-        _run_test(test_fn)
+    for test_function in _TESTS:
+        _run_test(test_function)
 
     total = _passed + _failed
     print(f"\n{_passed}/{total} tests passed.")

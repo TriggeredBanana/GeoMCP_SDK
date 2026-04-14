@@ -47,13 +47,13 @@ const ICON_BY_NAME = {
   Wrench,
 };
 
-const ALL_TOOLS = toolCatalog.tools.map(tool => ({
-  ...tool,
-  icon: ICON_BY_NAME[tool.icon] || Wrench,
-}));
+const ALL_TOOLS = toolCatalog.tools
+  .filter(tool => !tool.hidden)
+  .map(tool => ({
+    ...tool,
+    icon: ICON_BY_NAME[tool.icon] || Wrench,
+  }));
 
-const FEATURED_TOOLS = ALL_TOOLS.filter(tool => tool.featured);
-const FEATURED_IDS = new Set(FEATURED_TOOLS.map(tool => tool.mcpTool));
 const CATEGORIES = [...new Set(ALL_TOOLS.map(tool => tool.category))];
 
 export { ALL_TOOLS };
@@ -61,44 +61,27 @@ export { ALL_TOOLS };
 export function ToolList({ selectedTools = [], onToggleTool, onGoToChat }) {
   const [search, setSearch]               = useState('');
   const [filterOpen, setFilterOpen]       = useState(false);
-  const [showAll, setShowAll]             = useState(false);
   const [activeFilters, setActiveFilters] = useState(new Set());
   const [sortAlpha, setSortAlpha]         = useState(false);
 
   const selectedNames = useMemo(() => new Set(selectedTools.map(t => t.name)), [selectedTools]);
 
-  const isSearching = search.trim().length > 0;
-  const hasFilters  = activeFilters.size > 0;
+  const hasFilters = activeFilters.size > 0;
 
   const visibleTools = useMemo(() => {
-    const source = (isSearching || showAll || hasFilters) ? ALL_TOOLS : FEATURED_TOOLS;
     const q = search.toLowerCase();
 
-    let list = source.filter(t =>
+    let list = ALL_TOOLS.filter(t =>
       (!hasFilters || activeFilters.has(t.category)) &&
       t.name.toLowerCase().includes(q)
     );
 
-    // Pin featured tools first so they don't shift when expanding
-    if (!hasFilters) {
-      const pinned  = list.filter(t => FEATURED_IDS.has(t.mcpTool));
-      const extras  = list.filter(t => !FEATURED_IDS.has(t.mcpTool));
-      list = [...pinned, ...extras];
-    }
-
     if (sortAlpha) {
-      if (hasFilters) {
-        const matched = list.filter(t => activeFilters.has(t.category));
-        const rest    = list.filter(t => !activeFilters.has(t.category));
-        matched.sort((a, b) => a.name.localeCompare(b.name, 'nb'));
-        rest.sort((a, b) => a.name.localeCompare(b.name, 'nb'));
-        return [...matched, ...rest];
-      }
       return [...list].sort((a, b) => a.name.localeCompare(b.name, 'nb'));
     }
 
     return list;
-  }, [search, showAll, activeFilters, hasFilters, isSearching, sortAlpha]);
+  }, [search, activeFilters, hasFilters, sortAlpha]);
 
   function toggleFilter(opt) {
     setActiveFilters(prev => {
@@ -172,13 +155,6 @@ export function ToolList({ selectedTools = [], onToggleTool, onGoToChat }) {
           )}
         </div>
 
-        <button
-          className={`tools-showall-btn${showAll ? ' open' : ''}`}
-          title={showAll ? 'Vis mindre' : 'Vis alle verktøy'}
-          onClick={() => setShowAll(o => !o)}
-        >
-          {showAll ? '▲' : '▼'}
-        </button>
       </div>
 
       <div className="tools-grid">

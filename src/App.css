@@ -1106,33 +1106,6 @@
   margin: 4px 0;
 }
 
-/* Show-all arrow button (next to Filter) */
-.tools-showall-btn {
-  flex-shrink: 0;
-  width: 34px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--soft-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-mute);
-  font-size: 0.65rem;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, color 0.2s;
-}
-
-.tools-showall-btn:hover {
-  border-color: var(--hover-text);
-  color: var(--hover-text);
-}
-
-.tools-showall-btn.open {
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-
 /* Tool grid boxes */
 .tools-grid {
   display: grid;

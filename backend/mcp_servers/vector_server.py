@@ -226,7 +226,7 @@ async def get_verdensarv_sites() -> str:
         logger.error(f"Failed to fetch world heritage sites: {e}")
         return f"Error fetching world heritage sites: {e}"
 
-@vector_mcp.tool()
+@vector_mcp.tool(annotations={"readOnlyHint": True})
 async def voronoi(geojson: str) -> str:
     """
     Generates a Voronoi diagram from a GeoJSON FeatureCollection of points (or any geometries,
@@ -249,14 +249,59 @@ async def voronoi(geojson: str) -> str:
     except (json.JSONDecodeError, TypeError) as e:
         return json.dumps({"error": f"Ugyldig GeoJSON: {e}"})
 
-    features_in = collection.get("features", [])
+    if not isinstance(collection, dict) or collection.get("type") != "FeatureCollection":
+        return json.dumps({"error": "GeoJSON må være en FeatureCollection."})
+
+    features_in = collection.get("features")
+    if not isinstance(features_in, list):
+        return json.dumps({"error": "GeoJSON mangler en gyldig 'features'-liste."})
     if len(features_in) < 2:
         return json.dumps({"error": "Minst 2 punkter kreves for å generere et Voronoi-diagram."})
+
+    valid_features = []
+    for index, feature in enumerate(features_in, start=1):
+        if not isinstance(feature, dict):
+            return json.dumps({"error": f"Feature #{index} er ugyldig."})
+
+        geometry = feature.get("geometry")
+        if not isinstance(geometry, dict) or not geometry.get("type"):
+            return json.dumps({"error": f"Feature #{index} mangler en gyldig geometri."})
+
+        valid_features.append(feature)
 
     try:
         async with get_connection() as conn:
             async with conn.cursor() as cur:
-                # Build seed centroids table from the supplied features
+                await cur.execute(
+                    """
+                    WITH seeds AS (
+                        SELECT
+                            ST_Centroid(
+                                ST_Transform(
+                                    ST_SetSRID(ST_GeomFromGeoJSON(feat->>'geometry'), 4326),
+                                    25833
+                                )
+                            ) AS centroid
+                        FROM json_array_elements(%s::json) AS feat
+                    )
+                    SELECT
+                        COUNT(*) FILTER (WHERE centroid IS NOT NULL AND NOT ST_IsEmpty(centroid)) AS seed_count,
+                        COUNT(DISTINCT ST_AsEWKB(centroid)) FILTER (WHERE centroid IS NOT NULL AND NOT ST_IsEmpty(centroid)) AS distinct_seed_count
+                    FROM seeds;
+                    """,
+                    (json.dumps(valid_features),)
+                )
+                stats = await cur.fetchone()
+                seed_count = int(stats["seed_count"] or 0) if stats else 0
+                distinct_seed_count = int(stats["distinct_seed_count"] or 0) if stats else 0
+
+                if seed_count < 2:
+                    return json.dumps({"error": "Minst 2 gyldige geometrier kreves for å generere et Voronoi-diagram."})
+                if distinct_seed_count < 2:
+                    return json.dumps({"error": "Minst 2 unike punktposisjoner kreves for å generere et Voronoi-diagram."})
+                if distinct_seed_count != seed_count:
+                    return json.dumps({"error": "Duplikate seed-posisjoner støttes ikke i Voronoi-verktøyet."})
+
                 await cur.execute(
                     """
                     WITH seeds AS (
@@ -271,19 +316,35 @@ async def voronoi(geojson: str) -> str:
                             ) AS centroid
                         FROM json_array_elements(%s::json) WITH ORDINALITY AS t(feat, ordinality)
                     ),
-                    voronoi_polys AS (
-                        SELECT (ST_Dump(ST_VoronoiPolygons(ST_Collect(centroid)))).geom AS voronoi_geom
+                    valid_seeds AS (
+                        SELECT seed_id, feat, centroid
                         FROM seeds
+                        WHERE centroid IS NOT NULL AND NOT ST_IsEmpty(centroid)
+                    ),
+                    voronoi_polys AS (
+                        SELECT ROW_NUMBER() OVER () AS poly_id, dumped.geom AS voronoi_geom
+                        FROM (
+                            SELECT (ST_Dump(ST_VoronoiPolygons(ST_Collect(centroid)))).geom
+                            FROM valid_seeds
+                        ) AS dumped
                     )
                     SELECT
                         s.seed_id,
                         s.feat->'properties' AS properties,
-                        ST_AsGeoJSON(ST_Transform(v.voronoi_geom, 4326)) AS geojson
-                    FROM voronoi_polys v
-                    JOIN seeds s ON ST_Contains(v.voronoi_geom, s.centroid)
+                        ST_AsGeoJSON(ST_Transform(p.voronoi_geom, 4326)) AS geojson
+                    FROM valid_seeds s
+                    JOIN LATERAL (
+                        SELECT v.voronoi_geom
+                        FROM voronoi_polys v
+                        ORDER BY
+                            CASE WHEN ST_Covers(v.voronoi_geom, s.centroid) THEN 0 ELSE 1 END,
+                            ST_Distance(v.voronoi_geom, s.centroid),
+                            v.poly_id
+                        LIMIT 1
+                    ) p ON TRUE
                     ORDER BY s.seed_id;
                     """,
-                    (json.dumps(features_in),)
+                    (json.dumps(valid_features),)
                 )
                 rows = await cur.fetchall()
                 if not rows:
@@ -293,7 +354,7 @@ async def voronoi(geojson: str) -> str:
                 for row in rows:
                     r = dict(row)
                     geometry = json.loads(r["geojson"]) if r["geojson"] else None
-                    properties = r["properties"] or {}
+                    properties = r["properties"] if isinstance(r["properties"], dict) else {}
                     out_features.append({
                         "type": "Feature",
                         "geometry": geometry,

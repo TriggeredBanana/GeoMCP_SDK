@@ -3,7 +3,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFilter } from '@fortawesome/free-solid-svg-icons';
 import {
   Circle,
-  Scissors,
   SquareDot,
   SquaresIntersect,
   Globe,
@@ -22,41 +21,40 @@ import {
   Landmark,
   ShieldCheck,
   BarChart3,
+  Wrench,
 } from 'lucide-react';
+import toolCatalog from '../../shared/tool_catalog.json';
 
-const CATEGORIES = ['Vektor', 'Kulturmiljø', 'Dokumentsøk', 'Dokumenter', 'Kart'];
+const ICON_BY_NAME = {
+  Circle,
+  SquareDot,
+  SquaresIntersect,
+  Globe,
+  CircleDot,
+  LayoutGrid,
+  FileText,
+  Search,
+  MapPin,
+  Paintbrush,
+  Church,
+  TextSearch,
+  Sparkles,
+  Blend,
+  FolderSearch,
+  Landmark,
+  ShieldCheck,
+  BarChart3,
+  Wrench,
+};
 
-const ALL_TOOLS = [
-  // ── vector_server ──
-  { name: 'Buffer',                icon: Circle,           server: 'vector', category: 'Vektor',      desc: 'Lag en buffersone rundt en geometri - f.eks. 500 m radius for nærhetanalyser',                                    mcpTool: 'vector-buffer'                    },
-  { name: 'Snitt',                 icon: SquaresIntersect, server: 'vector', category: 'Vektor',      desc: 'Finn det overlappende arealet mellom to geometrier',                                                              mcpTool: 'vector-intersection'              },
-  { name: 'Omsluttende rektangel', icon: SquareDot,        server: 'vector', category: 'Vektor',      desc: 'Beregn bounding box (minste omsluttende rektangel) til en geometri',                                              mcpTool: 'vector-envelope'                  },
-  { name: 'Hent koordinater',      icon: Globe,            server: 'vector', category: 'Vektor',      desc: 'Trekk ut koordinatpar (lon/lat) fra en geometri',                                                                 mcpTool: 'vector-get_coordinates'           },
-  { name: 'Punkt i polygon',       icon: CircleDot,        server: 'vector', category: 'Vektor',      desc: 'Sjekk hvilke punkter som faller innenfor et polygon - f.eks. om lokasjoner er innenfor en vernesone',              mcpTool: 'vector-point_in_polygon'          },
-  { name: 'Voronoi',               icon: LayoutGrid,       server: 'vector', category: 'Vektor',      desc: 'Generer Voronoi-diagram fra punkter - deler kartet i innflytelsessoner per punkt',                                mcpTool: 'vector-voronoi'                   },
-  { name: 'Verdensarv',            icon: Church,           server: 'vector', category: 'Vektor',      desc: 'Hent alle norske verdensarvsteder med beskrivelse og geometri',                                                   mcpTool: 'vector-get_verdensarv_sites'      },
-  // ── geo_server ──
-  { name: 'Kulturmiljøsøk',       icon: MapPin,           server: 'geo',    category: 'Kulturmiljø', desc: 'Finn kulturmiljøer innenfor en gitt radius fra et punkt',                                                         mcpTool: 'geo-buffer_search'                },
-  { name: 'Kommuner',              icon: Landmark,         server: 'geo',    category: 'Kulturmiljø', desc: 'List kommunenummer og kommunenavn - kan filtreres med søkeord',                                                   mcpTool: 'geo-list_kommuner'                },
-  { name: 'Vernetyper',            icon: ShieldCheck,      server: 'geo',    category: 'Kulturmiljø', desc: 'List alle vernetyper for kulturmiljøer',                                                                          mcpTool: 'geo-list_vernetyper'              },
-  // ── search_server ──
-  { name: 'Fulltekstsøk',         icon: Search,           server: 'search', category: 'Dokumentsøk', desc: 'Søk i dokumenter med norsk fulltekstsøk rangert etter relevans',                                                  mcpTool: 'search-search_documents'          },
-  { name: 'Fuzzy-søk',            icon: TextSearch,       server: 'search', category: 'Dokumentsøk', desc: 'Fuzzy-søk med trigram-likhet - finner treff selv med skrivefeil',                                                 mcpTool: 'search-search_documents_fuzzy'    },
-  { name: 'Semantisk søk',        icon: Sparkles,         server: 'search', category: 'Dokumentsøk', desc: 'Søk med AI-embeddings - finner dokumenter med lignende betydning',                                                mcpTool: 'search-search_documents_semantic' },
-  { name: 'Hybridsøk',            icon: Blend,            server: 'search', category: 'Dokumentsøk', desc: 'Kombinert fulltekst + semantisk + fuzzy for bredest mulig dekning',                                               mcpTool: 'search-search_hybrid'             },
-  { name: 'Indekseringsstatus',    icon: BarChart3,        server: 'search', category: 'Dokumentsøk', desc: 'Vis statusoversikt for dokumentindeksering (new, ready, failed)',                                                  mcpTool: 'search-get_indexing_status'       },
-  // ── docs_server ──
-  { name: 'List dokumenter',       icon: FolderSearch,     server: 'docs',   category: 'Dokumenter',  desc: 'List alle tilgjengelige PDF-dokumenter i Azure Blob Storage',                                                      mcpTool: 'docs-list_documents'              },
-  { name: 'Hent dokument',         icon: FileText,         server: 'docs',   category: 'Dokumenter',  desc: 'Hent og les tekstinnholdet fra et spesifikt PDF-dokument',                                                        mcpTool: 'docs-fetch_document'              },
-  // ── map_server ──
-  { name: 'Tegn på kart',          icon: Paintbrush,       server: 'map',    category: 'Kart',        desc: 'Tegn former, punkter eller linjer direkte på kartet basert på analyseresultater',                                  mcpTool: 'map-draw_shape'                   },
-];
+const ALL_TOOLS = toolCatalog.tools.map(tool => ({
+  ...tool,
+  icon: ICON_BY_NAME[tool.icon] || Wrench,
+}));
 
-const FEATURED_IDS = new Set([
-  'vector-buffer', 'vector-intersection', 'vector-voronoi',
-  'geo-buffer_search', 'search-search_hybrid', 'map-draw_shape',
-]);
-const FEATURED_TOOLS = ALL_TOOLS.filter(t => FEATURED_IDS.has(t.mcpTool));
+const FEATURED_TOOLS = ALL_TOOLS.filter(tool => tool.featured);
+const FEATURED_IDS = new Set(FEATURED_TOOLS.map(tool => tool.mcpTool));
+const CATEGORIES = [...new Set(ALL_TOOLS.map(tool => tool.category))];
 
 export { ALL_TOOLS };
 

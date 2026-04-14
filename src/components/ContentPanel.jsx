@@ -1,5 +1,4 @@
 import { ChatInterface } from './ChatInterface';
-import { Analysis } from './Analysis';
 import { KartlagPanel } from './KartlagPanel';
 import { ExportPanel } from './ExportPanel';
 

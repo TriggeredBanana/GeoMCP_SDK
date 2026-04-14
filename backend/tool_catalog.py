@@ -31,6 +31,10 @@ def _load_catalog() -> list[dict]:
         if not all(isinstance(value, str) and value.strip() for value in (name, category, description, mcp_tool, server)):
             raise ValueError(f"Invalid tool catalog entry: {entry!r}")
 
+        hidden = entry.get("hidden", False)
+        if not isinstance(hidden, bool):
+            raise ValueError(f"Tool catalog 'hidden' field must be a boolean: {entry!r}")
+
         if mcp_tool in seen_ids:
             raise ValueError(f"Duplicate MCP tool id in catalog: {mcp_tool}")
 

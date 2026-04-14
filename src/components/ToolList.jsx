@@ -47,10 +47,12 @@ const ICON_BY_NAME = {
   Wrench,
 };
 
-const ALL_TOOLS = toolCatalog.tools.map(tool => ({
-  ...tool,
-  icon: ICON_BY_NAME[tool.icon] || Wrench,
-}));
+const ALL_TOOLS = toolCatalog.tools
+  .filter(tool => !tool.hidden)
+  .map(tool => ({
+    ...tool,
+    icon: ICON_BY_NAME[tool.icon] || Wrench,
+  }));
 
 const FEATURED_TOOLS = ALL_TOOLS.filter(tool => tool.featured);
 const FEATURED_IDS = new Set(FEATURED_TOOLS.map(tool => tool.mcpTool));

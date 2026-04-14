@@ -25,7 +25,8 @@
       "category": "Vektor",
       "desc": "Beregn bounding box (minste omsluttende rektangel) til en geometri",
       "mcpTool": "vector-envelope",
-      "featured": false
+      "featured": false,
+      "hidden": true
     },
     {
       "name": "Hent koordinater",
@@ -61,7 +62,7 @@
       "category": "Vektor",
       "desc": "Hent alle norske verdensarvsteder med beskrivelse og geometri",
       "mcpTool": "vector-get_verdensarv_sites",
-      "featured": false
+      "featured": true
     },
     {
       "name": "Kulturmiljøsøk",
@@ -97,7 +98,8 @@
       "category": "Dokumentsøk",
       "desc": "Søk i dokumenter med norsk fulltekstsøk rangert etter relevans",
       "mcpTool": "search-search_documents",
-      "featured": false
+      "featured": false,
+      "hidden": true
     },
     {
       "name": "Fuzzy-søk",
@@ -106,7 +108,8 @@
       "category": "Dokumentsøk",
       "desc": "Fuzzy-søk med trigram-likhet - finner treff selv med skrivefeil",
       "mcpTool": "search-search_documents_fuzzy",
-      "featured": false
+      "featured": false,
+      "hidden": true
     },
     {
       "name": "Semantisk søk",
@@ -115,7 +118,8 @@
       "category": "Dokumentsøk",
       "desc": "Søk med AI-embeddings - finner dokumenter med lignende betydning",
       "mcpTool": "search-search_documents_semantic",
-      "featured": false
+      "featured": false,
+      "hidden": true
     },
     {
       "name": "Hybridsøk",
@@ -124,7 +128,8 @@
       "category": "Dokumentsøk",
       "desc": "Kombinert fulltekst + semantisk + fuzzy for bredest mulig dekning",
       "mcpTool": "search-search_hybrid",
-      "featured": true
+      "featured": true,
+      "hidden": true
     },
     {
       "name": "Indekseringsstatus",
@@ -133,7 +138,8 @@
       "category": "Dokumentsøk",
       "desc": "Vis statusoversikt for dokumentindeksering (new, ready, failed)",
       "mcpTool": "search-get_indexing_status",
-      "featured": false
+      "featured": false,
+      "hidden": true
     },
     {
       "name": "List dokumenter",
@@ -151,7 +157,7 @@
       "category": "Dokumenter",
       "desc": "Hent og les tekstinnholdet fra et spesifikt PDF-dokument",
       "mcpTool": "docs-fetch_document",
-      "featured": false
+      "featured": true
     },
     {
       "name": "Tegn på kart",
@@ -160,7 +166,8 @@
       "category": "Kart",
       "desc": "Tegn former, punkter eller linjer direkte på kartet basert på analyseresultater",
       "mcpTool": "map-draw_shape",
-      "featured": true
+      "featured": false,
+      "hidden": true
     }
   ]
 }

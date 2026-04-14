@@ -276,6 +276,29 @@ async def save_indexed_document(
 
 
 # ---------------------------------------------------------------------------
+# Processing lease refresh
+# ---------------------------------------------------------------------------
+
+async def refresh_processing_lease(blob_name: str) -> None:
+    """
+    Refresh updated_at while a document is still in 'processing'.
+
+    Stale-recovery relies on updated_at, but the documents trigger only bumps
+    that column on title/content writes. Long-running embedding batches can
+    otherwise cross the stale-processing window and be reclaimed mid-run.
+    """
+    await execute(
+        """
+        UPDATE documents
+        SET updated_at = now()
+        WHERE source_blob = %(blob)s
+          AND indexing_status = 'processing'
+        """,
+        {"blob": blob_name},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Step 6: Save chunks with per-chunk embeddings
 # ---------------------------------------------------------------------------
 
@@ -284,7 +307,11 @@ async def save_indexed_document(
 _EMBEDDING_BATCH_SIZE = 50  # TUNE
 
 
-async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
+async def save_chunks(
+    document_id: int,
+    chunks: list[dict],
+    lease_blob_name: str | None = None,
+) -> tuple[int, int]:
     """
     Embed all chunks (batched API calls) and upsert them into the chunks table.
 
@@ -297,6 +324,8 @@ async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
 
     Returns (total_inserted, embedded_count).
     Embedding failures are non-fatal: affected chunks are stored without a vector.
+    If *lease_blob_name* is provided, refresh the processing lease between
+    long-running batches so active work is not reclaimed as stale.
     """
     if not chunks:
         return (0, 0)
@@ -318,6 +347,8 @@ async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
                     batch_start, batch_start + len(batch) - 1, document_id, e,
                 )
                 all_vectors.extend([None] * len(batch))
+            if lease_blob_name:
+                await refresh_processing_lease(lease_blob_name)
     except ValueError as e:
         # GITHUB_MODELS_TOKEN not configured — store chunks without embeddings
         logger.warning("save_chunks: %s — storing chunks without embeddings", e)
@@ -344,6 +375,9 @@ async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
 
     # --- Steps 2-4: DELETE + all INSERTs in a single transaction ---
     local_id_to_db_id: dict[int, int] = {}
+
+    if lease_blob_name:
+        await refresh_processing_lease(lease_blob_name)
 
     async with get_connection() as conn:
         async with conn.transaction():
@@ -372,6 +406,9 @@ async def save_chunks(document_id: int, chunks: list[dict]) -> tuple[int, int]:
                         cur, document_id, parent_db_id, chunk,
                         local_id_map[chunk["local_id"]][1],
                     )
+
+    if lease_blob_name:
+        await refresh_processing_lease(lease_blob_name)
 
     total = len(parent_chunks) + len(child_chunks)
     logger.info(
@@ -542,7 +579,11 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
 
         # Step 6: embed and save chunks
         t0 = time.perf_counter()
-        chunk_count, embedded_count = await save_chunks(doc_id, raw_chunks)
+        chunk_count, embedded_count = await save_chunks(
+            doc_id,
+            raw_chunks,
+            lease_blob_name=blob_name,
+        )
         logger.info(
             "save_chunks: '%s' → %d chunks saved, %d with embeddings (%.3fs)",
             blob_name, chunk_count, embedded_count, time.perf_counter() - t0,
@@ -558,6 +599,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                 "process_document: no chunk embeddings for '%s' — attempting document-level fallback",
                 blob_name,
             )
+            await refresh_processing_lease(blob_name)
             doc_embedding = await generate_embeddings(chunk_text(content))
             if doc_embedding:
                 await execute(
@@ -572,6 +614,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                     "— semantic search unavailable until re-index with working embeddings",
                     blob_name,
                 )
+            await refresh_processing_lease(blob_name)
 
         # Step 7: flip status.
         # 'ready'   = fully indexed: content + ALL chunk embeddings available

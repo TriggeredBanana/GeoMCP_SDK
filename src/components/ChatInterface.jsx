@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { ArrowUp, Paperclip, FileText, X, Plus, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -40,7 +40,7 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
   const MAX_TEXTAREA_HEIGHT = 250; // ~5 rows
 
   // Auto-resize textarea as user types
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';

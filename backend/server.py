@@ -41,7 +41,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 from starlette.routing import Mount, Route
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT, list_documents
 from copilot import CopilotClient
@@ -105,7 +105,7 @@ async def chat(request: Request):
     """
     POST /api/chat
 
-    Body: { message, chat_id?, map_context? }
+    Body: { message, chat_id?, map_context?, stream? }
     Header: Authorization: Bearer <token>
 
     - Validates the session token and resolves the owning user.
@@ -113,7 +113,7 @@ async def chat(request: Request):
     - Ownership of chat_id is enforced before use.
     - Loads prior DB messages for context injection into the Copilot session.
     - Persists the user message and AI reply to app.messages.
-    - Returns { reply, chat_id, map_actions }.
+    - If stream=true, returns SSE events; otherwise returns JSON { reply, chat_id, map_actions }.
     """
     user = await get_user_from_request(request)
     if not user:
@@ -129,6 +129,7 @@ async def chat(request: Request):
         return JSONResponse({"error": "'message' is required."}, status_code=400)
     map_context = data.get("map_context")
     tool_hints = normalize_tool_hints(data.get("tool_hints"))
+    stream = data.get("stream", False)
 
     chat_id: str | None = data.get("chat_id")
     created_chat = not chat_id
@@ -181,11 +182,21 @@ async def chat(request: Request):
     turn_id = f"{chat_id}-{len(prior_messages) // 2}"
     tracker.start_turn(turn_id)
 
-    # Send to Copilot
+    if stream:
+        return StreamingResponse(
+            _stream_chat(copilot_session, message, map_context, chat_id, user_id, created_chat, tool_hints, tracker),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # Non-streaming fallback (original behaviour)
     try:
         result = await manager.send_message(copilot_session, message, map_context=map_context, chat_id=chat_id, tool_hints=tool_hints)
     except Exception as exc:
-        # Finalise the turn even on error so partial data isn't lost.
         tracker.finalise_turn()
         logger.error("Copilot send_message failed for chat %s: %s", chat_id, exc)
         return JSONResponse({"error": "AI service error. Please try again."}, status_code=502)
@@ -193,11 +204,9 @@ async def chat(request: Request):
     reply = result["content"]
     map_actions = result["map_actions"]
 
-    # Finalise usage tracking for this turn.
     turn_usage = tracker.finalise_turn()
     usage_snapshot = tracker.snapshot(turn_usage)
 
-    # Persist the full exchange atomically so chat history never lands half-written.
     try:
         await execute_transaction([
             (
@@ -232,6 +241,80 @@ async def chat(request: Request):
         "map_actions": map_actions,
         "usage": usage_snapshot,
     })
+
+
+async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, created_chat, tool_hints, tracker):
+    """
+    Async generator that yields SSE events for a streaming chat response.
+
+    Event types:
+      event: meta       — { chat_id }
+      event: thinking   — { content: "delta..." }
+      event: delta      — { content: "delta..." }
+      event: done       — { content, map_actions, usage }
+      event: error      — { error: "..." }
+    """
+    import json as _json
+
+    # Immediately tell the client which chat_id to use
+    yield f"event: meta\ndata: {_json.dumps({'chat_id': chat_id})}\n\n"
+
+    reply = ""
+    map_actions = []
+    try:
+        async for chunk in manager.send_message_stream(
+            copilot_session, message,
+            map_context=map_context, chat_id=chat_id, tool_hints=tool_hints,
+        ):
+            ctype = chunk["type"]
+            if ctype == "thinking":
+                yield f"event: thinking\ndata: {_json.dumps({'content': chunk['content']})}\n\n"
+            elif ctype == "delta":
+                yield f"event: delta\ndata: {_json.dumps({'content': chunk['content']})}\n\n"
+            elif ctype == "done":
+                reply = chunk["content"]
+                map_actions = chunk["map_actions"]
+
+    except Exception as exc:
+        tracker.finalise_turn()
+        logger.error("Streaming failed for chat %s: %s", chat_id, exc)
+        yield f"event: error\ndata: {_json.dumps({'error': 'AI service error. Please try again.'})}\n\n"
+        return
+
+    turn_usage = tracker.finalise_turn()
+    usage_snapshot = tracker.snapshot(turn_usage)
+
+    # Persist the full exchange
+    try:
+        await execute_transaction([
+            (
+                "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
+                (chat_id, "user", message),
+            ),
+            (
+                "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
+                (chat_id, "assistant", reply),
+            ),
+            (
+                "UPDATE app.chats SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (chat_id,),
+            ),
+        ])
+    except Exception as exc:
+        logger.error("Failed to persist messages for chat %s: %s", chat_id, exc)
+        await manager.discard_chat(chat_id)
+        if created_chat:
+            try:
+                await execute(
+                    "DELETE FROM app.chats WHERE id = %s AND user_id = %s",
+                    (chat_id, user_id),
+                )
+            except Exception:
+                logger.warning("Failed to clean up unsaved chat %s", chat_id, exc_info=True)
+        yield f"event: error\ndata: {_json.dumps({'error': 'Could not save chat history.'})}\n\n"
+        return
+
+    yield f"event: done\ndata: {_json.dumps({'content': reply, 'map_actions': map_actions, 'usage': usage_snapshot})}\n\n"
 
 
 # ---------------------------------------------------------------------------

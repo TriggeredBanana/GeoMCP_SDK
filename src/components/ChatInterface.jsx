@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
-import { ArrowUp, Paperclip, FileText, X, Plus, Wrench } from 'lucide-react';
+import { ArrowUp, Paperclip, FileText, X, Plus, Wrench, ChevronDown, ChevronRight, Brain } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -14,6 +14,45 @@ import {
   getToken,
   setActiveChatId,
 } from '../utils/auth';
+
+function ThinkingBlock({ thinking, isStreaming }) {
+  const [expanded, setExpanded] = useState(isStreaming);
+  const contentRef = useRef(null);
+
+  // Auto-expand while streaming, allow manual toggle after
+  useEffect(() => {
+    if (isStreaming) setExpanded(true);
+  }, [isStreaming]);
+
+  // Auto-scroll to bottom as thinking text streams in.
+  // useLayoutEffect fires synchronously after DOM mutations (before paint),
+  // ensuring scrollHeight reflects the new text content.
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (isStreaming && expanded && el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [thinking, isStreaming, expanded]);
+
+  if (!thinking) return null;
+
+  return (
+    <div className={`thinking-block${isStreaming ? ' thinking-block--streaming' : ''}`}>
+      <button className="thinking-toggle" onClick={() => setExpanded(e => !e)}>
+        <Brain size={14} className="thinking-icon" />
+        <span className="thinking-label">
+          {isStreaming ? 'Tenker…' : 'Tankeprosess'}
+        </span>
+        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+      </button>
+      {expanded && (
+        <div className="thinking-content" ref={contentRef}>
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], onLayerCreated, selectedTools = [], onClearSelectedTools, onRemoveTool }) {
   // Auth state
@@ -242,6 +281,13 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
     onClearSelectedTools?.();
     setIsLoading(true);
 
+    // Add a placeholder assistant message that we'll update incrementally
+    const assistantIdx = { current: null };
+    setMessages(prev => {
+      assistantIdx.current = prev.length;
+      return [...prev, { role: 'assistant', text: '', thinking: '', attachments: [] }];
+    });
+
     try {
       const res = await apiFetch('/api/chat', {
         method: 'POST',
@@ -250,61 +296,119 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
           chat_id: activeChatId || undefined,
           map_context: drawnLayers,
           tool_hints: sentTools.map(t => t.mcpTool),
+          stream: true,
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        setMessages(prev => [
-          ...prev,
-          { role: 'assistant', text: data.error || 'En feil oppstod.', attachments: [] },
-        ]);
+        const data = await res.json();
+        setMessages(prev => {
+          const copy = [...prev];
+          copy[assistantIdx.current] = { role: 'assistant', text: data.error || 'En feil oppstod.', attachments: [] };
+          return copy;
+        });
         return;
       }
 
-      if (data.map_actions?.length && onLayerCreated) {
-        data.map_actions.forEach(action => {
-          const geojson = action.geojson;
-          const shape = geojson?.type === 'FeatureCollection'
-            ? 'FeatureCollection'
-            : (geojson?.geometry?.type || 'Feature');
-          onLayerCreated({
-            id: `drawn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            name: action.layer_name,
-            shape,
-            geoJson: geojson,
-            visible: true,
-          });
-        });
-      }
+      // Parse SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      if (!activeChatId && data.chat_id) {
-        setActiveChatIdState(data.chat_id);
-        setActiveChatId(data.chat_id);
-        setChatsLoaded(false); // Invalidate so history refreshes next open.
-      }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      // Update usage state from the response.
-      if (data.usage) {
-        setUsageSession(data.usage.session || null);
-        setUsageMonthly(data.usage.monthly || null);
-      }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line in buffer
 
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: data.reply,
-          attachments: [],
-          turnUsage: data.usage?.turn || null,
-        },
-      ]);
+        let eventType = null;
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ') && eventType) {
+            const payload = JSON.parse(line.slice(6));
+
+            if (eventType === 'meta' && payload.chat_id) {
+              if (!activeChatId) {
+                setActiveChatIdState(payload.chat_id);
+                setActiveChatId(payload.chat_id);
+                setChatsLoaded(false);
+              }
+            } else if (eventType === 'thinking') {
+              setMessages(prev => {
+                const copy = [...prev];
+                const msg = { ...copy[assistantIdx.current] };
+                msg.thinking = (msg.thinking || '') + payload.content;
+                copy[assistantIdx.current] = msg;
+                return copy;
+              });
+            } else if (eventType === 'delta') {
+              setMessages(prev => {
+                const copy = [...prev];
+                const msg = { ...copy[assistantIdx.current] };
+                msg.text = (msg.text || '') + payload.content;
+                copy[assistantIdx.current] = msg;
+                return copy;
+              });
+            } else if (eventType === 'done') {
+              // Process map actions
+              if (payload.map_actions?.length && onLayerCreated) {
+                payload.map_actions.forEach(action => {
+                  const geojson = action.geojson;
+                  const shape = geojson?.type === 'FeatureCollection'
+                    ? 'FeatureCollection'
+                    : (geojson?.geometry?.type || 'Feature');
+                  onLayerCreated({
+                    id: `drawn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    name: action.layer_name,
+                    shape,
+                    geoJson: geojson,
+                    visible: true,
+                  });
+                });
+              }
+
+              if (payload.usage) {
+                setUsageSession(payload.usage.session || null);
+                setUsageMonthly(payload.usage.monthly || null);
+              }
+
+              // Finalize the assistant message with complete content and usage
+              setMessages(prev => {
+                const copy = [...prev];
+                const msg = { ...copy[assistantIdx.current] };
+                msg.text = payload.content || msg.text;
+                msg.turnUsage = payload.usage?.turn || null;
+                copy[assistantIdx.current] = msg;
+                return copy;
+              });
+            } else if (eventType === 'error') {
+              setMessages(prev => {
+                const copy = [...prev];
+                copy[assistantIdx.current] = {
+                  role: 'assistant',
+                  text: payload.error || 'En feil oppstod.',
+                  attachments: [],
+                };
+                return copy;
+              });
+            }
+            eventType = null;
+          }
+        }
+      }
     } catch {
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', text: 'Kunne ikke kontakte serveren.', attachments: [] },
-      ]);
+      setMessages(prev => {
+        const copy = [...prev];
+        if (assistantIdx.current !== null && assistantIdx.current < copy.length) {
+          copy[assistantIdx.current] = {
+            role: 'assistant', text: 'Kunne ikke kontakte serveren.', attachments: [],
+          };
+        }
+        return copy;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -438,11 +542,21 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
                         )}
                       </div>
                     )}
+                    {msg.role === 'assistant' && msg.thinking && (
+                      <ThinkingBlock thinking={msg.thinking} isStreaming={isLoading && !msg.text && i === messages.length - 1} />
+                    )}
                     {hasText && (
                       <div className={`chat-bubble chat-bubble--${msg.role}`}>
                         {msg.role === 'assistant'
                           ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
                           : msg.text}
+                      </div>
+                    )}
+                    {msg.role === 'assistant' && !hasText && isLoading && i === messages.length - 1 && !msg.thinking && (
+                      <div className="chat-bubble chat-bubble--assistant chat-bubble--typing">
+                        <span className="typing-dot" />
+                        <span className="typing-dot" />
+                        <span className="typing-dot" />
                       </div>
                     )}
                     {msg.role === 'assistant' && msg.turnUsage && (
@@ -451,16 +565,6 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
                   </div>
                 );
               })
-            )}
-
-            {isLoading && (
-              <div className="message-wrapper message-wrapper--assistant">
-                <div className="chat-bubble chat-bubble--assistant chat-bubble--typing">
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                </div>
-              </div>
             )}
 
             <div ref={bottomRef} />

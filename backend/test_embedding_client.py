@@ -173,11 +173,11 @@ def test_no_provider_raises():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: get_embeddings() basic call
+# Test 4: get_embeddings() basic call — Azure OpenAI (dimensions included)
 # ---------------------------------------------------------------------------
 
 def test_get_embeddings_basic():
-    """get_embeddings returns correctly ordered vectors."""
+    """get_embeddings returns correctly ordered vectors and passes dimensions for Azure OpenAI."""
     _reset_module()
 
     async def _run():
@@ -189,7 +189,7 @@ def test_get_embeddings_basic():
 
         embedding_client._client = mock_client
         embedding_client._model = "test-model"
-        embedding_client._provider = "test"
+        embedding_client._provider = "azure_openai"
         embedding_client._dimensions = 1536
 
         result = await embedding_client.get_embeddings(["a", "b", "c"])
@@ -203,13 +203,47 @@ def test_get_embeddings_basic():
         ok3 = result[0][0] == 0.01 and result[1][0] == 0.02
         _report("vectors are ordered by index", ok3)
 
-        # Verify the API was called with correct params including dimensions
+        # Verify the API was called with dimensions for Azure OpenAI
         mock_client.embeddings.create.assert_called_once_with(
             input=["a", "b", "c"],
             model="test-model",
             dimensions=1536,
         )
-        _report("API called with correct params + dimensions", True)
+        _report("Azure OpenAI: API called with dimensions param", True)
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# Test 4b: get_embeddings() — GitHub Models (dimensions NOT included)
+# ---------------------------------------------------------------------------
+
+def test_get_embeddings_github_no_dimensions():
+    """get_embeddings does NOT pass dimensions parameter when using GitHub Models."""
+    _reset_module()
+
+    async def _run():
+        import embedding_client
+
+        mock_client = MagicMock()
+        mock_response = _make_mock_response(2)
+        mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+        embedding_client._client = mock_client
+        embedding_client._model = "openai/text-embedding-3-small"
+        embedding_client._provider = "github_models"
+        embedding_client._dimensions = 1536
+
+        result = await embedding_client.get_embeddings(["a", "b"])
+        ok = len(result) == 2
+        _report("GitHub Models: returns 2 vectors", ok, f"got {len(result)}")
+
+        # Verify the API was called WITHOUT dimensions for GitHub Models
+        mock_client.embeddings.create.assert_called_once_with(
+            input=["a", "b"],
+            model="openai/text-embedding-3-small",
+        )
+        _report("GitHub Models: API called without dimensions param", True)
 
     asyncio.run(_run())
 
@@ -416,6 +450,50 @@ def test_dimensions_default():
             _report("dimensions=1536 default", ok, f"got {embedding_client._dimensions}")
 
 
+def test_dimensions_invalid_string():
+    """Non-integer AZURE_OPENAI_EMBEDDING_DIMENSIONS raises ValueError."""
+    _reset_module()
+    env = {
+        "AZURE_OPENAI_ENDPOINT": "https://test.openai.azure.com",
+        "AZURE_OPENAI_API_KEY": "test-key",
+        "AZURE_OPENAI_EMBEDDING_DIMENSIONS": "not-a-number",
+        "GITHUB_MODELS_TOKEN": "",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        import embedding_client
+        embedding_client._client = None
+        embedding_client._model = ""
+        embedding_client._provider = ""
+        try:
+            embedding_client._init_client()
+            _report("invalid dimensions string → ValueError", False, "no exception raised")
+        except ValueError as e:
+            ok = "positive integer" in str(e)
+            _report("invalid dimensions string → ValueError", ok, str(e)[:80])
+
+
+def test_dimensions_zero_raises():
+    """Zero AZURE_OPENAI_EMBEDDING_DIMENSIONS raises ValueError."""
+    _reset_module()
+    env = {
+        "AZURE_OPENAI_ENDPOINT": "https://test.openai.azure.com",
+        "AZURE_OPENAI_API_KEY": "test-key",
+        "AZURE_OPENAI_EMBEDDING_DIMENSIONS": "0",
+        "GITHUB_MODELS_TOKEN": "",
+    }
+    with patch.dict(os.environ, env, clear=False):
+        import embedding_client
+        embedding_client._client = None
+        embedding_client._model = ""
+        embedding_client._provider = ""
+        try:
+            embedding_client._init_client()
+            _report("zero dimensions → ValueError", False, "no exception raised")
+        except ValueError as e:
+            ok = "positive integer" in str(e)
+            _report("zero dimensions → ValueError", ok, str(e)[:80])
+
+
 # ---------------------------------------------------------------------------
 # Test 12: Embedding cache - _text_hash
 # ---------------------------------------------------------------------------
@@ -447,7 +525,7 @@ def test_text_hash():
 
 
 # ---------------------------------------------------------------------------
-# Test 12: API error propagation
+# Test 13: API error propagation
 # ---------------------------------------------------------------------------
 
 def test_api_error_propagation():
@@ -478,7 +556,7 @@ def test_api_error_propagation():
 
 
 # ---------------------------------------------------------------------------
-# Test 13: Lazy initialisation
+# Test 14: Lazy initialisation
 # ---------------------------------------------------------------------------
 
 def test_lazy_init():
@@ -492,7 +570,7 @@ def test_lazy_init():
 
 
 # ---------------------------------------------------------------------------
-# Test 14: Verify whitespace-only env vars are treated as empty
+# Test 15: Verify whitespace-only env vars are treated as empty
 # ---------------------------------------------------------------------------
 
 def test_whitespace_env_vars():
@@ -516,7 +594,7 @@ def test_whitespace_env_vars():
 
 
 # ---------------------------------------------------------------------------
-# Test 15: Integration-style test with real API (skipped if no credentials)
+# Test 16: Integration-style test with real API (skipped if no credentials)
 # ---------------------------------------------------------------------------
 
 def test_integration_real_api():
@@ -582,9 +660,12 @@ def main():
     test_default_deployment_name()
     test_dimensions_from_env()
     test_dimensions_default()
+    test_dimensions_invalid_string()
+    test_dimensions_zero_raises()
 
     print("\n--- API calls (mocked) ---")
     test_get_embeddings_basic()
+    test_get_embeddings_github_no_dimensions()
     test_get_embeddings_empty()
     test_get_single_embedding()
     test_get_single_embedding_empty()

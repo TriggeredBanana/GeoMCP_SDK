@@ -29,6 +29,7 @@ AI orchestration:
   GET  /api/search    — Quick test endpoint for document search
 """
 
+import json as _json
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -243,6 +244,13 @@ async def chat(request: Request):
     })
 
 
+# ---------------------------------------------------------------------------
+# Thinking-trace sanitizer
+# ---------------------------------------------------------------------------
+
+from sanitizer import sanitize_thinking as _sanitize_thinking
+
+
 async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, created_chat, tool_hints, tracker):
     """
     Async generator that yields SSE events for a streaming chat response.
@@ -254,7 +262,6 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
       event: done       — { content, map_actions, usage }
       event: error      — { error: "..." }
     """
-    import json as _json
 
     # Immediately tell the client which chat_id to use
     yield f"event: meta\ndata: {_json.dumps({'chat_id': chat_id})}\n\n"
@@ -268,7 +275,8 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
         ):
             ctype = chunk["type"]
             if ctype == "thinking":
-                yield f"event: thinking\ndata: {_json.dumps({'content': chunk['content']})}\n\n"
+                sanitized = _sanitize_thinking(chunk["content"])
+                yield f"event: thinking\ndata: {_json.dumps({'content': sanitized})}\n\n"
             elif ctype == "delta":
                 yield f"event: delta\ndata: {_json.dumps({'content': chunk['content']})}\n\n"
             elif ctype == "done":

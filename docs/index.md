@@ -17,7 +17,7 @@ Atlas er en GeoMCP-chatbot utviklet for å assistere saksbehandlere i arbeid med
 
 ## Mørk og lys modus
 
-![Dark/light mode toggle](assets/theme-toggle.gif)
+![Dark/light mode toggle](assets/darklight.gif)
 
 Atlas støtter mørk og lys modus med persistent lagring i nettleseren.
 

@@ -198,6 +198,7 @@ async def chat(request: Request):
     try:
         result = await manager.send_message(copilot_session, message, map_context=map_context, chat_id=chat_id, tool_hints=tool_hints)
     except Exception as exc:
+        # Finalise the turn even on error so partial data isn't lost.
         tracker.finalise_turn()
         logger.error("Copilot send_message failed for chat %s: %s", chat_id, exc)
         return JSONResponse({"error": "AI service error. Please try again."}, status_code=502)
@@ -205,9 +206,11 @@ async def chat(request: Request):
     reply = result["content"]
     map_actions = result["map_actions"]
 
+    # Finalise usage tracking for this turn.
     turn_usage = tracker.finalise_turn()
     usage_snapshot = tracker.snapshot(turn_usage)
 
+    # Persist the full exchange atomically so chat history never lands half-written.
     try:
         await execute_transaction([
             (

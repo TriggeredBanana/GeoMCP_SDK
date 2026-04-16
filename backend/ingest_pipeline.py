@@ -325,17 +325,38 @@ async def _prefetch_embedding_cache(document_id: int) -> dict[str, list[float]]:
         """,
         {"doc_id": document_id},
     )
+    # Determine expected dimensions from the current embedding provider
+    try:
+        from embedding_client import _dimensions as _current_dims
+    except Exception:
+        _current_dims = 0  # unknown — skip dimension validation
+
     cache: dict[str, list[float]] = {}
     for row in rows:
         text = row["text"]
         emb_raw = row["embedding"]
         if text and emb_raw:
             # pgvector returns embedding as a string "[0.1,0.2,...]" or list
-            if isinstance(emb_raw, str):
-                emb = json.loads(emb_raw)
-            elif isinstance(emb_raw, (list, tuple)):
-                emb = list(emb_raw)
-            else:
+            try:
+                if isinstance(emb_raw, str):
+                    emb = json.loads(emb_raw)
+                elif isinstance(emb_raw, (list, tuple)):
+                    emb = list(emb_raw)
+                else:
+                    continue
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "_prefetch_embedding_cache: skipping malformed embedding for doc_id=%s",
+                    document_id,
+                )
+                continue
+            # Discard cached vectors whose dimensions don't match the current config
+            if _current_dims and len(emb) != _current_dims:
+                logger.debug(
+                    "_prefetch_embedding_cache: discarding stale %d-dim vector "
+                    "(expected %d) for doc_id=%s",
+                    len(emb), _current_dims, document_id,
+                )
                 continue
             cache[_text_hash(text)] = emb
     if cache:

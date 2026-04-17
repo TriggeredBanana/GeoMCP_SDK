@@ -304,7 +304,8 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
     yield f"event: meta\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
 
     reply = ""
-    thinking_text = ""
+    raw_thinking = ""       # unsanitized accumulation for full-text re-sanitization
+    prev_sanitized = ""     # last full sanitization result (for safe delta computation)
     map_actions = []
     try:
         async for chunk in manager.send_message_stream(
@@ -313,9 +314,21 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
         ):
             ctype = chunk["type"]
             if ctype == "thinking":
-                sanitized = _sanitize_thinking(chunk["content"])
-                thinking_text += sanitized
-                yield f"event: thinking\ndata: {json.dumps({'content': sanitized})}\n\n"
+                raw_thinking += chunk["content"]
+                # Re-sanitize the full accumulated text so patterns that span
+                # chunk boundaries are caught (defense-in-depth).
+                full_sanitized = _sanitize_thinking(raw_thinking)
+                if full_sanitized.startswith(prev_sanitized):
+                    delta = full_sanitized[len(prev_sanitized):]
+                    if delta:
+                        yield f"event: thinking\ndata: {json.dumps({'content': delta})}\n\n"
+                else:
+                    # A cross-boundary pattern was detected: earlier text was
+                    # retroactively redacted.  Withhold the delta — the client
+                    # already has the prior (partially leaked) prefix, but we
+                    # stop sending more.  The DB stores the correct text.
+                    pass
+                prev_sanitized = full_sanitized
             elif ctype == "delta":
                 yield f"event: delta\ndata: {json.dumps({'content': chunk['content']})}\n\n"
             elif ctype == "done":
@@ -334,6 +347,10 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
 
     turn_usage = tracker.finalise_turn()
     usage_snapshot = tracker.snapshot(turn_usage)
+
+    # Re-sanitize the full thinking text for persistent storage — ensures
+    # patterns split across streaming chunks are properly redacted at rest.
+    thinking_text = _sanitize_thinking(raw_thinking) if raw_thinking else ""
 
     # Persist the full exchange + AI layers atomically.
     user_meta = json.dumps({"tool_hints": tool_hints}) if tool_hints else None

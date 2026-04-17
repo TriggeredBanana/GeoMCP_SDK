@@ -469,20 +469,30 @@ def test_semantic_chunk_search_filters_status():
     asyncio.run(go())
 
 
-def test_semantic_chunk_search_uses_exact_best_per_document_ranking():
-    """Chunk semantic search should rank the best chunk per document without a candidate cutoff."""
+def test_semantic_chunk_search_uses_hnsw_candidate_stage():
+    """Chunk semantic search must use a candidate-limited inner ANN query so the HNSW index is used."""
     async def go():
         with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
             mock_query.return_value = []
             await search_service._search_semantic_chunks([0.1] * 10, "regelverk", 10)
             sql, params = mock_query.call_args.args
-            assert_in("semantic chunk search uses DISTINCT ON", "SELECT DISTINCT ON (d.id)", sql)
+            # Inner ANN stage must order purely by vector distance (HNSW-friendly).
             assert_in(
-                "semantic chunk search orders within each document by vector distance",
-                "ORDER BY d.id, c.embedding <=> %(emb)s::vector",
+                "semantic chunk search inner query orders by vector distance only",
+                "ORDER BY embedding <=> %(emb)s::vector",
                 sql,
             )
-            assert_true("semantic chunk search does not use a candidate limit", "candidate_lim" not in params)
+            # Candidate limit must be passed so the inner scan is bounded.
+            assert_true(
+                "semantic chunk search passes candidate_lim parameter",
+                "candidate_lim" in params,
+            )
+            assert_true(
+                "semantic chunk search candidate_lim is larger than final limit",
+                params["candidate_lim"] > params["lim"],
+            )
+            # Outer dedup still uses DISTINCT ON per document.
+            assert_in("semantic chunk search deduplicates by document", "SELECT DISTINCT ON (d.id)", sql)
 
     asyncio.run(go())
 
@@ -549,6 +559,19 @@ def test_get_chunk_by_id_returns_plain_dict():
     asyncio.run(go())
 
 
+def test_get_chunk_by_id_filters_status():
+    """get_chunk_by_id must not return chunks for failed/processing documents."""
+    async def go():
+        with patch.object(search_service, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = []
+            result = await search_service.get_chunk_by_id(42)
+            sql = mock_query.call_args.args[0]
+            assert_in("get_chunk_by_id filters by status", _STATUS_FILTER, sql)
+            assert_equal("get_chunk_by_id returns None for missing/filtered chunk", result, None)
+
+    asyncio.run(go())
+
+
 def test_full_text_empty_query_skips_db():
     """search_full_text with blank query returns [] without hitting the DB."""
     async def go():
@@ -585,10 +608,11 @@ _TESTS = [
     test_full_text_search_filters_status,
     test_fuzzy_search_filters_status,
     test_semantic_chunk_search_filters_status,
-    test_semantic_chunk_search_uses_exact_best_per_document_ranking,
+    test_semantic_chunk_search_uses_hnsw_candidate_stage,
     test_semantic_document_fallback_filters_status,
     test_semantic_chunk_search_truncates_content,
     test_get_chunk_by_id_returns_plain_dict,
+    test_get_chunk_by_id_filters_status,
     test_full_text_empty_query_skips_db,
 ]
 

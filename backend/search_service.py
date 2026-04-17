@@ -17,6 +17,11 @@ from db import query
 logger = logging.getLogger(__name__)
 
 _SNIPPET_LENGTH = 300
+# Candidate multiplier for the inner HNSW ANN stage in semantic chunk search.
+# The inner query fetches this many chunks (ordered purely by vector distance so
+# the HNSW index is used), and the outer query then deduplicates by document and
+# applies the caller's final limit on that small materialized set.
+_ANN_CANDIDATE_FACTOR = 10
 
 
 def _with_snippets(rows) -> list[dict]:
@@ -111,14 +116,25 @@ async def _search_semantic_chunks(
     """
     Find the best-matching chunk per document using pgvector cosine similarity.
 
-    Uses DISTINCT ON (document_id) ordered by cosine distance so each document
-    contributes at most one result: the chunk most relevant to the query.
-    The outer query re-sorts those per-document winners by score and applies
-    the caller's final limit.
+    Two-stage approach to preserve HNSW index usage:
+
+    1. Inner query: pure ``ORDER BY embedding <=> query LIMIT k`` so pgvector can
+       use the HNSW index for an approximate nearest-neighbor scan over *all*
+       chunks.  k = limit × _ANN_CANDIDATE_FACTOR gives enough headroom that the
+       best chunk per document is very likely included.
+
+    2. Middle query: joins the small candidate set with documents, filters by
+       indexing_status, then uses DISTINCT ON (d.id) to keep only the
+       highest-scoring chunk per document.  Because this operates on at most k
+       rows (not the full chunks table) the sort is cheap.
+
+    3. Outer query: re-sorts the per-document winners by score and applies the
+       caller's final limit.
 
     Returns chunk-level content with the same snippet-length contract used by
     the other search backends.
     """
+    candidate_lim = limit * _ANN_CANDIDATE_FACTOR
     rows = await query(
         """
         SELECT *
@@ -138,16 +154,21 @@ async def _search_semantic_chunks(
                 c.chunk_index,
                 c.id                                              AS chunk_id,
                 1 - (c.embedding <=> %(emb)s::vector)             AS score
-            FROM chunks c
+            FROM (
+                SELECT *
+                FROM chunks
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %(emb)s::vector
+                LIMIT %(candidate_lim)s
+            ) c
             JOIN documents d ON c.document_id = d.id
-            WHERE c.embedding IS NOT NULL
-              AND d.indexing_status IN ('ready', 'partial')
+            WHERE d.indexing_status IN ('ready', 'partial')
             ORDER BY d.id, c.embedding <=> %(emb)s::vector
         ) best_per_doc
         ORDER BY score DESC
         LIMIT %(lim)s;
         """,
-        {"emb": json.dumps(query_embedding), "lim": limit},
+        {"emb": json.dumps(query_embedding), "lim": limit, "candidate_lim": candidate_lim},
     )
     logger.info("search_semantic (chunks): query='%s' → %d treff", search_query, len(rows))
     return _with_snippets(rows)
@@ -297,7 +318,8 @@ async def get_chunk_by_id(chunk_id: int) -> dict | None:
             c.chunk_index
         FROM chunks c
         JOIN documents d ON d.id = c.document_id
-        WHERE c.id = %(chunk_id)s;
+        WHERE c.id = %(chunk_id)s
+          AND d.indexing_status IN ('ready', 'partial');
         """,
         {"chunk_id": chunk_id},
     )

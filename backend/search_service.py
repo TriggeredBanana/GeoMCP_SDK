@@ -22,6 +22,10 @@ _SNIPPET_LENGTH = 300
 # the HNSW index is used), and the outer query then deduplicates by document and
 # applies the caller's final limit on that small materialized set.
 _ANN_CANDIDATE_FACTOR = 10
+# Small result limits still need a reasonably wide ANN candidate pool; otherwise
+# repeated chunks from one document can crowd out other relevant documents
+# before DISTINCT ON has a chance to deduplicate.
+_ANN_MIN_CANDIDATES = 100
 
 
 def _with_snippets(rows) -> list[dict]:
@@ -134,7 +138,7 @@ async def _search_semantic_chunks(
     Returns chunk-level content with the same snippet-length contract used by
     the other search backends.
     """
-    candidate_lim = limit * _ANN_CANDIDATE_FACTOR
+    candidate_lim = max(limit * _ANN_CANDIDATE_FACTOR, _ANN_MIN_CANDIDATES)
     rows = await query(
         """
         SELECT *

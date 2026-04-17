@@ -30,6 +30,7 @@ AI orchestration:
   GET  /api/search/chunks/{id}   — Fetch full text behind a semantic search hit
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -324,7 +325,8 @@ async def get_usage(request: Request):
 # ---------------------------------------------------------------------------
 
 async def get_documents(request: Request):
-    docs = list_documents()
+    loop = asyncio.get_running_loop()
+    docs = await loop.run_in_executor(None, list_documents)
     return JSONResponse({"documents": docs})
 
 

@@ -2,8 +2,6 @@ from azure.storage.blob import BlobServiceClient
 
 from config import AZURE_CONNECTION_STRING, BLOB_CONTAINER_NAME
 
-_PDF_SUFFIXES = (".pdf", ".PDF")
-
 
 def _get_container_client():
     missing = []
@@ -20,7 +18,7 @@ def _get_container_client():
 
 
 def _is_pdf_blob_name(blob_name: str) -> bool:
-    return blob_name.endswith(_PDF_SUFFIXES)
+    return blob_name.lower().endswith(".pdf")
 
 
 def download_blob_bytes(blob_name: str) -> bytes:

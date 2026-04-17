@@ -3,12 +3,13 @@ Ingest pipeline for PDF documents from Azure Blob Storage.
 
 Pipeline steps per document:
   1. discover_documents()       — list blobs with metadata from Azure
-  2. process_document()         — atomically claim an eligible document row
+  2. claim_document_for_processing() — atomically claim an eligible document row
   3. extract_blocks()           — fetch PDF and extract structured text blocks (blocking → thread)
   4. chunk_document()           — split into structure-aware chunks (heading-based, from chunker.py)
   5. save_indexed_document()    — upsert into documents table (content for full-text search)
   6. save_chunks()              — embed each chunk via GitHub Models API and insert into chunks table
-  7. update_index_status()      — set final status
+  7. generate_embeddings()      — optional document-level fallback embedding when no chunk embeddings exist
+  8. update_index_status()      — set final status
 
 Status model (indexing_status):
   new        — not yet processed
@@ -74,7 +75,59 @@ async def discover_documents() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Step 3: Plain-text extraction fallback
+# Step 2: Atomic claim / reindex eligibility
+# ---------------------------------------------------------------------------
+
+async def claim_document_for_processing(
+    blob_name: str,
+    last_modified: str,
+    file_hash: str,
+    retry_failed: bool = True,
+) -> int | None:
+    """
+    Atomically decide whether a document should be (re)indexed and, if so,
+    transition it to ``processing``.
+
+    Returns the claimed document id, or None when the document should be
+    skipped because it is already processing or still up to date.
+
+    Why this lives in one SQL statement:
+    - Avoids the race in a separate read-then-write eligibility check.
+    - Makes the status transition to ``processing`` part of the claim itself.
+    - Keeps stale-processing detection accurate by updating ``updated_at``.
+    """
+    # How the concurrency safety works:
+    #   - PostgreSQL's unique constraint on source_blob serializes concurrent
+    #     INSERTs: only one worker can insert a new row; all others land on
+    #     ON CONFLICT.
+    #   - The WHERE clause on DO UPDATE is then evaluated atomically by each
+    #     losing worker. If the winner already set status='processing', the
+    #     WHERE condition is false and RETURNING returns nothing.
+    rows = await query(
+        """
+        INSERT INTO documents
+            (title, content, source_blob, last_modified, file_hash, indexing_status)
+        VALUES (%(blob)s, '', %(blob)s, %(lm)s, %(hash)s, 'processing')
+        ON CONFLICT (source_blob) DO UPDATE
+            SET indexing_status = 'processing',
+                updated_at     = now()
+        WHERE documents.indexing_status != 'processing'
+          AND CASE documents.indexing_status
+              WHEN 'ready' THEN
+                  documents.last_modified IS DISTINCT FROM %(lm)s
+                  OR documents.file_hash IS DISTINCT FROM %(hash)s
+              WHEN 'failed' THEN %(retry)s::boolean
+              ELSE true
+          END
+        RETURNING id;
+        """,
+        {"blob": blob_name, "lm": last_modified, "hash": file_hash, "retry": retry_failed},
+    )
+    return rows[0]["id"] if rows else None
+
+
+# ---------------------------------------------------------------------------
+# Fallback helper: plain-text extraction
 # ---------------------------------------------------------------------------
 
 async def extract_text(blob_name: str) -> str:
@@ -93,7 +146,7 @@ async def extract_text(blob_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Step 3 (new): Extract structured blocks
+# Step 3: Extract structured blocks
 # ---------------------------------------------------------------------------
 
 async def extract_blocks(blob_name: str) -> list[dict]:
@@ -116,7 +169,7 @@ async def extract_blocks(blob_name: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Step 4: Fallback chunking for document-level embedding
+# Fallback helper: fixed-size chunking for document-level embedding
 # ---------------------------------------------------------------------------
 
 def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> list[str]:
@@ -138,7 +191,7 @@ def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 100) -> list[st
 
 
 # ---------------------------------------------------------------------------
-# Step 5: Generate a document-level fallback embedding
+# Fallback helper: document-level fallback embedding
 # ---------------------------------------------------------------------------
 
 async def generate_embeddings(
@@ -560,7 +613,7 @@ async def _insert_chunk(
 
 
 # ---------------------------------------------------------------------------
-# Step 7: Update index status
+# Step 8: Update index status
 # ---------------------------------------------------------------------------
 
 async def update_index_status(blob_name: str, status: str, error: Optional[str] = None) -> None:
@@ -589,40 +642,15 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
     last_modified = blob["last_modified"]
     file_hash = blob["file_hash"]
 
-    # Atomic claim: check eligibility and set status='processing' in one statement.
-    # Returns a row only if the document should be (re)indexed, preventing race conditions
-    # when multiple workers process the same document concurrently.
-    # Also sets updated_at so stale processing rows can be detected and reclaimed.
-    #
-    # How the concurrency safety works:
-    #   - PostgreSQL's unique constraint on source_blob serializes concurrent INSERTs: only
-    #     one worker can insert a new row; all others land on ON CONFLICT.
-    #   - The WHERE clause on DO UPDATE is then evaluated atomically by each losing worker.
-    #     If the winner already set status='processing', the WHERE condition is false and
-    #     RETURNING returns nothing → the worker correctly skips the document.
-    claimed = await query(
-        """
-        INSERT INTO documents
-            (title, content, source_blob, last_modified, file_hash, indexing_status)
-        VALUES (%(blob)s, '', %(blob)s, %(lm)s, %(hash)s, 'processing')
-        ON CONFLICT (source_blob) DO UPDATE
-            SET indexing_status = 'processing',
-                updated_at     = now()
-        WHERE documents.indexing_status != 'processing'
-          AND CASE documents.indexing_status
-              WHEN 'ready' THEN
-                  documents.last_modified IS DISTINCT FROM %(lm)s
-                  OR documents.file_hash IS DISTINCT FROM %(hash)s
-              WHEN 'failed' THEN %(retry)s::boolean
-              ELSE true
-          END
-        RETURNING id;
-        """,
-        {"blob": blob_name, "lm": last_modified, "hash": file_hash,
-         "retry": retry_failed},
+    # Step 2: atomically claim the document or skip it if it is still current.
+    claimed_id = await claim_document_for_processing(
+        blob_name,
+        last_modified,
+        file_hash,
+        retry_failed=retry_failed,
     )
 
-    if not claimed:
+    if claimed_id is None:
         logger.info("process_document: skipping '%s' (up to date or already processing)", blob_name)
         return {"status": "skipped", "blob": blob_name}
 
@@ -710,7 +738,7 @@ async def process_document(blob: dict, retry_failed: bool = True) -> dict:
                 )
             await refresh_processing_lease(blob_name)
 
-        # Step 7: flip status.
+        # Step 8: flip status.
         # 'ready'   = fully indexed: content + semantic search available
         #             (all chunk embeddings available, or document-level
         #             fallback embedding when no chunks were produced)

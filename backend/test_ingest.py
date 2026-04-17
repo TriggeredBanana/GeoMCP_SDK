@@ -240,6 +240,32 @@ def _run_process(
 print("\n# Stale-processing recovery")
 
 
+def test_claim_document_for_processing_uses_atomic_upsert():
+    """Step 2 should atomically claim eligible rows in a single upsert statement."""
+    async def go():
+        with patch.object(ingest_pipeline, "query", new_callable=AsyncMock) as mock_query:
+            mock_query.return_value = [{"id": 123}]
+            claimed = await ingest_pipeline.claim_document_for_processing(
+                "doc.pdf",
+                "2024-01-01",
+                "abc",
+                retry_failed=False,
+            )
+
+            sql, params = mock_query.call_args.args
+            assert_equal("claim helper returns claimed id", claimed, 123)
+            assert_in("claim helper inserts new documents", "INSERT INTO documents", sql)
+            assert_in("claim helper uses ON CONFLICT upsert", "ON CONFLICT (source_blob) DO UPDATE", sql)
+            assert_in(
+                "claim helper skips already-processing rows",
+                "documents.indexing_status != 'processing'",
+                sql,
+            )
+            assert_equal("claim helper forwards retry flag", params["retry"], False)
+
+    asyncio.run(go())
+
+
 def test_stale_reclaim_sql_resets_to_new():
     """The reclaim UPDATE must target processing rows and reset them to 'new'."""
     async def go():
@@ -491,6 +517,14 @@ def test_semantic_chunk_search_uses_hnsw_candidate_stage():
                 "semantic chunk search candidate_lim is larger than final limit",
                 params["candidate_lim"] > params["lim"],
             )
+            assert_equal(
+                "semantic chunk search uses configured ANN floor",
+                params["candidate_lim"],
+                max(
+                    params["lim"] * search_service._ANN_CANDIDATE_FACTOR,
+                    search_service._ANN_MIN_CANDIDATES,
+                ),
+            )
             # Outer dedup still uses DISTINCT ON per document.
             assert_in("semantic chunk search deduplicates by document", "SELECT DISTINCT ON (d.id)", sql)
 
@@ -588,6 +622,8 @@ def test_full_text_empty_query_skips_db():
 # ===========================================================================
 
 _TESTS = [
+    # step 2 claim helper
+    test_claim_document_for_processing_uses_atomic_upsert,
     # stale reclaim
     test_stale_reclaim_sql_resets_to_new,
     test_no_stale_rows_pipeline_succeeds,

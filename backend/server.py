@@ -223,14 +223,15 @@ async def chat(request: Request):
     usage_snapshot = tracker.snapshot(turn_usage)
 
     # Persist the full exchange + AI layers atomically.
+    user_meta = json.dumps({"tool_hints": tool_hints}) if tool_hints else None
     tx_statements = [
         (
-            "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
-            (chat_id, "user", message),
+            "INSERT INTO app.messages (chat_id, role, content, metadata) VALUES (%s, %s, %s, %s::jsonb)",
+            (chat_id, "user", message, user_meta),
         ),
         (
-            "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
-            (chat_id, "assistant", reply),
+            "INSERT INTO app.messages (chat_id, role, content, metadata) VALUES (%s, %s, %s, %s::jsonb)",
+            (chat_id, "assistant", reply, None),
         ),
         (
             "UPDATE app.chats SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",
@@ -303,6 +304,7 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
     yield f"event: meta\ndata: {json.dumps({'chat_id': chat_id})}\n\n"
 
     reply = ""
+    thinking_text = ""
     map_actions = []
     try:
         async for chunk in manager.send_message_stream(
@@ -312,6 +314,7 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
             ctype = chunk["type"]
             if ctype == "thinking":
                 sanitized = _sanitize_thinking(chunk["content"])
+                thinking_text += sanitized
                 yield f"event: thinking\ndata: {json.dumps({'content': sanitized})}\n\n"
             elif ctype == "delta":
                 yield f"event: delta\ndata: {json.dumps({'content': chunk['content']})}\n\n"
@@ -333,14 +336,16 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
     usage_snapshot = tracker.snapshot(turn_usage)
 
     # Persist the full exchange + AI layers atomically.
+    user_meta = json.dumps({"tool_hints": tool_hints}) if tool_hints else None
+    asst_meta = json.dumps({"thinking": thinking_text}) if thinking_text else None
     tx_statements = [
         (
-            "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
-            (chat_id, "user", message),
+            "INSERT INTO app.messages (chat_id, role, content, metadata) VALUES (%s, %s, %s, %s::jsonb)",
+            (chat_id, "user", message, user_meta),
         ),
         (
-            "INSERT INTO app.messages (chat_id, role, content) VALUES (%s, %s, %s)",
-            (chat_id, "assistant", reply),
+            "INSERT INTO app.messages (chat_id, role, content, metadata) VALUES (%s, %s, %s, %s::jsonb)",
+            (chat_id, "assistant", reply, asst_meta),
         ),
         (
             "UPDATE app.chats SET updated_at = CURRENT_TIMESTAMP WHERE id = %s",

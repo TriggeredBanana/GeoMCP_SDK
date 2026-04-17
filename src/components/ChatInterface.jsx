@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { AuthModal } from './AuthModal';
 import { ChatHistory } from './ChatHistory';
 import { TurnUsage, MonthlyUsageBar, InputAreaUsageBar } from './UsageDisplay';
+import toolCatalog from '../../shared/tool_catalog.json';
 import {
   apiFetch,
   clearActiveChatId,
@@ -14,6 +15,10 @@ import {
   getToken,
   setActiveChatId,
 } from '../utils/auth';
+
+const _TOOL_BY_MCP_ID = Object.fromEntries(
+  toolCatalog.tools.map(t => [t.mcpTool, t])
+);
 
 function ThinkingBlock({ thinking, isStreaming }) {
   const [expanded, setExpanded] = useState(isStreaming);
@@ -206,11 +211,24 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
       const res = await apiFetch(`/api/chats/${chatId}/messages`);
       if (!res.ok) return false;
       const data = await res.json();
-      const loaded = (data.messages || []).map(m => ({
-        role: m.role,
-        text: m.content || '',
-        attachments: [],
-      }));
+      const loaded = (data.messages || []).map(m => {
+        const metadata = m.metadata || {};
+        const msg = {
+          role: m.role,
+          text: m.content || '',
+          attachments: [],
+        };
+        if (m.role === 'assistant' && metadata.thinking) {
+          msg.thinking = metadata.thinking;
+        }
+        if (metadata.tool_hints?.length) {
+          msg.tools = metadata.tool_hints.map(mcpId => {
+            const entry = _TOOL_BY_MCP_ID[mcpId];
+            return { name: entry?.name || mcpId, mcpTool: mcpId };
+          });
+        }
+        return msg;
+      });
       setMessages(loaded);
       return true;
     } catch {

@@ -257,13 +257,11 @@ class SessionManager:
         idle_event = asyncio.Event()
         error_holder: list = []
         full_content = []
-        full_reasoning = []
 
         def handler(event):
             if event.type == SessionEventType.ASSISTANT_REASONING_DELTA:
                 delta = getattr(event.data, "delta_content", None) or ""
                 if delta:
-                    full_reasoning.append(delta)
                     queue.put_nowait({"type": "thinking", "content": delta})
             elif event.type == SessionEventType.ASSISTANT_MESSAGE_DELTA:
                 delta = getattr(event.data, "delta_content", None) or ""

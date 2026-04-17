@@ -95,6 +95,7 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
   const fileInputRef = useRef(null);
   const streamAbortRef = useRef(null);
   const textareaRef = useRef(null);
+  const assistantIdx = useRef(null);
 
   const MAX_TEXTAREA_HEIGHT = 250; // ~5 rows
 
@@ -343,7 +344,6 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
     setIsLoading(true);
 
     // Add a placeholder assistant message that we'll update incrementally
-    const assistantIdx = { current: null };
     setMessages(prev => {
       assistantIdx.current = prev.length;
       return [...prev, { role: 'assistant', text: '', thinking: '', attachments: [] }];

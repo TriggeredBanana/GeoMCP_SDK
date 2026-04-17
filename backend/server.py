@@ -136,6 +136,8 @@ async def chat(request: Request):
     message = (data.get("message") or "").strip()
     if not message:
         return JSONResponse({"error": "'message' is required."}, status_code=400)
+    if len(message) > 10000:
+        return JSONResponse({"error": "Message too long."}, status_code=400)
     map_context = data.get("map_context")
     tool_hints = normalize_tool_hints(data.get("tool_hints"))
     stream = data.get("stream") is True
@@ -315,6 +317,9 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
             ctype = chunk["type"]
             if ctype == "thinking":
                 raw_thinking += chunk["content"]
+                if len(raw_thinking) > 100_000:
+                    # Safety cutoff to prevent memory issues from runaway thinking text.
+                    raw_thinking = raw_thinking[:100_000]   
                 # Re-sanitize the full accumulated text so patterns that span
                 # chunk boundaries are caught (defense-in-depth).
                 full_sanitized = _sanitize_thinking(raw_thinking)
@@ -323,10 +328,8 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
                     if delta:
                         yield f"event: thinking\ndata: {json.dumps({'content': delta})}\n\n"
                 else:
-                    # A cross-boundary pattern was detected: earlier text was
-                    # retroactively redacted.  Withhold the delta — the client
-                    # already has the prior (partially leaked) prefix, but we
-                    # stop sending more.  The DB stores the correct text.
+                    # Cross-boundary redaction: the full sanitized text is now shorter than
+                    # what was previously sent. Stop emitting deltas for this chunk.
                     pass
                 prev_sanitized = full_sanitized
             elif ctype == "delta":

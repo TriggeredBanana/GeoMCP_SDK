@@ -29,6 +29,7 @@ AI orchestration:
   GET  /api/search    — Quick test endpoint for document search
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -48,7 +49,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT, list_documents
 from copilot import CopilotClient
-from sanitizer import sanitize_thinking as _sanitize_thinking
+from sanitizer import sanitize_thinking as _sanitize_thinking, find_pending_sql_start as _find_pending_sql
 from session_manager import SessionManager
 from usage_tracker import get_or_create_tracker, get_tracker
 from db import init_db_pool, close_pool, execute, execute_transaction, query
@@ -201,6 +202,7 @@ async def chat(request: Request):
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
+                "X-Content-Type-Options": "nosniff",
             },
         )
 
@@ -328,9 +330,20 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
                 # Re-sanitize the full accumulated text so patterns that span
                 # chunk boundaries are caught.
                 full_sanitized = _sanitize_thinking(raw_thinking)
-                # Only emit up to (length − holdback) so patterns split across
-                # chunks are never partially leaked to the client.
+
+                # Determine the safe emission boundary.  The baseline holdback
+                # prevents short patterns (tokens, UUIDs, …) from being split
+                # across chunks.  Additionally, if the *raw* text contains an
+                # unterminated SQL keyword (SELECT … with no `;` yet), we
+                # extend the holdback to cover everything from that keyword
+                # onward so the SQL prefix is never partially emitted.
                 safe_end = max(chars_sent, len(full_sanitized) - _THINKING_HOLDBACK)
+                pending_sql = _find_pending_sql(raw_thinking)
+                if pending_sql >= 0:
+                    # Suppress all output from the SQL keyword onward.
+                    safe_end = min(safe_end, pending_sql)
+                    safe_end = max(safe_end, chars_sent)  # never go backwards
+
                 if safe_end > chars_sent:
                     delta = full_sanitized[chars_sent:safe_end]
                     yield f"event: thinking\ndata: {json.dumps({'content': delta})}\n\n"
@@ -340,6 +353,12 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
             elif ctype == "done":
                 reply = chunk["content"]
                 map_actions = chunk["map_actions"]
+
+    except asyncio.CancelledError:
+        # Client disconnected — clean up silently.
+        tracker.finalise_turn()
+        logger.info("Stream cancelled (client disconnect) for chat %s", chat_id)
+        return
 
     except Exception as exc:
         tracker.finalise_turn()

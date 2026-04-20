@@ -350,7 +350,7 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
     // Add a placeholder assistant message that we'll update incrementally
     setMessages(prev => {
       assistantIdx.current = prev.length;
-      return [...prev, { role: 'assistant', text: '', thinking: '', attachments: [] }];
+      return [...prev, { role: 'assistant', text: '', thinking: '', thinkingDone: false, attachments: [] }];
     });
 
     try {
@@ -429,18 +429,23 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
               }
             } else if (eventType === 'thinking') {
               setMessages(prev => {
+                const idx = assistantIdx.current;
+                if (idx === null || idx >= prev.length) return prev;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx.current] };
+                const msg = { ...copy[idx] };
                 msg.thinking = (msg.thinking || '') + payload.content;
-                copy[assistantIdx.current] = msg;
+                copy[idx] = msg;
                 return copy;
               });
             } else if (eventType === 'delta') {
               setMessages(prev => {
+                const idx = assistantIdx.current;
+                if (idx === null || idx >= prev.length) return prev;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx.current] };
+                const msg = { ...copy[idx] };
                 msg.text = (msg.text || '') + payload.content;
-                copy[assistantIdx.current] = msg;
+                msg.thinkingDone = true;
+                copy[idx] = msg;
                 return copy;
               });
             } else if (eventType === 'done') {
@@ -468,17 +473,22 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
 
               // Finalize the assistant message with complete content and usage
               setMessages(prev => {
+                const idx = assistantIdx.current;
+                if (idx === null || idx >= prev.length) return prev;
                 const copy = [...prev];
-                const msg = { ...copy[assistantIdx.current] };
+                const msg = { ...copy[idx] };
                 msg.text = payload.content || msg.text;
                 msg.turnUsage = payload.usage?.turn || null;
-                copy[assistantIdx.current] = msg;
+                msg.thinkingDone = true;
+                copy[idx] = msg;
                 return copy;
               });
             } else if (eventType === 'error') {
               setMessages(prev => {
+                const idx = assistantIdx.current;
+                if (idx === null || idx >= prev.length) return prev;
                 const copy = [...prev];
-                copy[assistantIdx.current] = {
+                copy[idx] = {
                   role: 'assistant',
                   text: payload.error || 'En feil oppstod.',
                   attachments: [],
@@ -507,6 +517,12 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
         }
         return copy;
       });
+      // If a new chat was created (meta event received) but the stream then
+      // died, clear the now-dead chat_id so follow-up messages don't 404.
+      if (wasNewChat) {
+        setActiveChatIdState(null);
+        setActiveChatId(null);
+      }
     } finally {
       streamAbortRef.current = null;
       setIsLoading(false);
@@ -642,7 +658,7 @@ export function ChatInterface({ externalUser, onUserChange, drawnLayers = [], on
                       </div>
                     )}
                     {msg.role === 'assistant' && msg.thinking && (
-                      <ThinkingBlock thinking={msg.thinking} isStreaming={isLoading && !msg.text && i === messages.length - 1} />
+                      <ThinkingBlock thinking={msg.thinking} isStreaming={isLoading && !msg.thinkingDone && i === messages.length - 1} />
                     )}
                     {hasText && (
                       <div className={`chat-bubble chat-bubble--${msg.role}`}>

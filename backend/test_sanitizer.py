@@ -5,6 +5,7 @@ Run standalone: python test_sanitizer.py
 import sys
 
 from sanitizer import sanitize_thinking as sanitize
+from sanitizer import find_pending_sql_start
 
 
 # ---- Test cases ---- (label, input, must_have, must_not_have)
@@ -314,6 +315,28 @@ cases = [
         ["[token]"],
         ["eyJhbGci"],
     ),
+
+    # --- AWS access keys ---
+    (
+        "Token AKIA",
+        "Using key AKIAIOSFODNN7EXAMPLE for S3 access",
+        ["[token]"],
+        ["AKIA"],
+    ),
+
+    # --- File paths: /tmp and /data ---
+    (
+        "Unix path /tmp",
+        "Temp file at /tmp/upload_cache/abc123.json",
+        ["[file-path]"],
+        ["/tmp/upload_cache"],
+    ),
+    (
+        "Unix path /data",
+        "Data stored in /data/postgres/16/main",
+        ["[file-path]"],
+        ["/data/postgres"],
+    ),
 ]
 
 
@@ -350,6 +373,7 @@ _HOLDBACK = 128  # must match server.py _THINKING_HOLDBACK
 def simulate_streaming(full_text, chunk_sizes):
     """Simulate the server's streaming sanitization with holdback buffer.
 
+    Mirrors the SQL-aware holdback logic in server.py's _stream_chat.
     Returns (final_text, list_of_deltas).
     """
     raw = ""
@@ -365,6 +389,11 @@ def simulate_streaming(full_text, chunk_sizes):
         raw += chunk
         sanitized = sanitize(raw)
         safe_end = max(chars_sent, len(sanitized) - _HOLDBACK)
+        # SQL-aware holdback: suppress emission while inside unterminated SQL
+        pending_sql = find_pending_sql_start(raw)
+        if pending_sql >= 0:
+            safe_end = min(safe_end, pending_sql)
+            safe_end = max(safe_end, chars_sent)
         if safe_end > chars_sent:
             deltas.append(sanitized[chars_sent:safe_end])
             chars_sent = safe_end
@@ -422,6 +451,20 @@ streaming_cases = [
         [20, 30, 300],
         [],
         ["completely normal"],
+    ),
+    (
+        "Stream: long SQL split across many chunks",
+        f"Prefix text. SELECT id, name FROM app.users WHERE role = 'admin' AND active = TRUE ORDER BY name;{_PAD}",
+        [20, 20, 20, 20, 20, 300],  # SQL split across many chunks
+        ["SELECT", "app.users", "admin", "ORDER BY"],
+        ["[SQL query]"],
+    ),
+    (
+        "Stream: SQL keyword arrives first, semicolon much later",
+        f"Thinking about this. SELECT * FROM app.messages WHERE chat_id = 'abc123' AND created_at > NOW() - INTERVAL '1 day';{_PAD}",
+        [30, 30, 30, 30, 300],
+        ["SELECT", "app.messages", "abc123"],
+        ["[SQL query]"],
     ),
 ]
 

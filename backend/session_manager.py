@@ -257,6 +257,7 @@ class SessionManager:
         idle_event = asyncio.Event()
         error_holder: list = []
         full_content = []
+        final_message = [None]  # SDK's canonical final message (if received)
 
         def handler(event):
             if event.type == SessionEventType.ASSISTANT_REASONING_DELTA:
@@ -269,10 +270,11 @@ class SessionManager:
                     full_content.append(delta)
                     queue.put_nowait({"type": "delta", "content": delta})
             elif event.type == SessionEventType.ASSISTANT_MESSAGE:
-                # Full message (may contain the complete text if deltas were partial)
+                # Canonical final message from the SDK — preferred over delta
+                # accumulation since it may differ (corrections, completions).
                 content = getattr(event.data, "content", None) or ""
-                if content and not full_content:
-                    full_content.append(content)
+                if content:
+                    final_message[0] = content
             elif event.type == SessionEventType.SESSION_IDLE:
                 idle_event.set()
             elif event.type == SessionEventType.SESSION_ERROR:
@@ -307,7 +309,7 @@ class SessionManager:
             if error_holder:
                 raise error_holder[0]
 
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self._evict_session(chat_id)
             raise
         finally:
@@ -316,7 +318,9 @@ class SessionManager:
         if chat_id and chat_id in self.last_active:
             self.last_active[chat_id] = datetime.now(timezone.utc)
 
-        content = "".join(full_content)
+        # Prefer the SDK's canonical final message over delta accumulation,
+        # since it may contain corrections or completions.
+        content = final_message[0] if final_message[0] is not None else "".join(full_content)
         map_actions = get_and_clear_shapes(chat_id)
         yield {"type": "done", "content": content, "map_actions": map_actions}
 
@@ -379,6 +383,7 @@ class SessionManager:
             if unsub:
                 unsub()
             discard_tracker(chat_id)
+            get_and_clear_shapes(chat_id)  # discard any pending map shapes
             del self.sessions[chat_id]
             del self.last_active[chat_id]
             logger.info("Session expired and removed for chat: %s", chat_id)

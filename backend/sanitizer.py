@@ -66,13 +66,13 @@ _RE_INTERNAL_URL = re.compile(
 )
 _RE_MCP_PATH = re.compile(r"/mcp/\w+/mcp\b")
 _RE_TOKEN = re.compile(
-    r"\b(?:ghp_|github_pat_|sk-)[A-Za-z0-9_]+"
+    r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_]+"
     r"|\beyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+",
 )
 # Absolute file system paths — reveals server directory layout.
 _RE_FILE_PATH = re.compile(
     r"(?:[A-Za-z]:\\(?:[\w\s\-\.]+\\)+[\w\s\-\.]*"   # Windows: C:\Users\...
-    r"|/(?:home|var|etc|opt|usr|srv|app|root)/\S+)",  # Unix absolute paths
+    r"|/(?:home|var|etc|opt|usr|srv|app|root|tmp|data)/\S+)",  # Unix absolute paths
 )
 
 # ---------------------------------------------------------------------------
@@ -101,3 +101,32 @@ def sanitize_thinking(text: str) -> str:
     for pattern, replacement in _SANITIZE_RULES:
         text = pattern.sub(replacement, text)
     return text
+
+
+# Pattern that matches an ALL-CAPS SQL keyword at the start of a potential
+# statement that has NOT yet been terminated with `;`.  Used by the streaming
+# holdback logic to suppress emission while an unterminated SQL statement is
+# still accumulating.
+_RE_SQL_KEYWORD_START = re.compile(
+    r"(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE(?:\s+TABLE)?|"
+    r"CREATE\s+TABLE|ALTER\s+TABLE|DROP\s+TABLE|EXPLAIN(?:\s+ANALYZE)?)\b",
+)
+
+
+def find_pending_sql_start(text: str) -> int:
+    """Return the char offset of the last unterminated SQL keyword in *text*.
+
+    If the text contains an ALL-CAPS SQL keyword (SELECT, INSERT INTO, etc.)
+    that is NOT followed by a ``;`` terminator, return the start offset of that
+    keyword — everything from that offset onward should be held back during
+    streaming.
+
+    Returns -1 when there is no pending (unterminated) SQL.
+    """
+    last_start = -1
+    for m in _RE_SQL_KEYWORD_START.finditer(text):
+        # Check whether this keyword is followed by a `;` in the remaining text
+        after = text[m.start():]
+        if ";" not in after:
+            last_start = m.start()
+    return last_start

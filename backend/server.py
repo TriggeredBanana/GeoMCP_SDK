@@ -331,14 +331,12 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
                 # chunk boundaries are caught.
                 full_sanitized = _sanitize_thinking(raw_thinking)
 
-                # Determine the safe emission boundary.  The baseline holdback
-                # prevents short patterns (tokens, UUIDs, …) from being split
-                # across chunks.  Additionally, if the *raw* text contains an
-                # unterminated SQL keyword (SELECT … with no `;` yet), we
-                # extend the holdback to cover everything from that keyword
-                # onward so the SQL prefix is never partially emitted.
+                # Safe emission boundary: hold back _THINKING_HOLDBACK chars
+                # for short patterns, and everything from an unterminated SQL
+                # keyword onward.  We search the *sanitized* text so offsets
+                # stay valid after earlier rules shorten it.
                 safe_end = max(chars_sent, len(full_sanitized) - _THINKING_HOLDBACK)
-                pending_sql = _find_pending_sql(raw_thinking)
+                pending_sql = _find_pending_sql(full_sanitized)
                 if pending_sql >= 0:
                     # Suppress all output from the SQL keyword onward.
                     safe_end = min(safe_end, pending_sql)

@@ -389,8 +389,8 @@ def simulate_streaming(full_text, chunk_sizes):
         raw += chunk
         sanitized = sanitize(raw)
         safe_end = max(chars_sent, len(sanitized) - _HOLDBACK)
-        # SQL-aware holdback: suppress emission while inside unterminated SQL
-        pending_sql = find_pending_sql_start(raw)
+        # Holdback uses sanitized text so offsets stay valid after redaction.
+        pending_sql = find_pending_sql_start(sanitized)
         if pending_sql >= 0:
             safe_end = min(safe_end, pending_sql)
             safe_end = max(safe_end, chars_sent)
@@ -465,6 +465,19 @@ streaming_cases = [
         [30, 30, 30, 30, 300],
         ["SELECT", "app.messages", "abc123"],
         ["[SQL query]"],
+    ),
+    (
+        "Stream: redaction before pending SQL (offset mismatch regression)",
+        # Token before SQL shrinks from 104→7 chars after redaction; raw
+        # offsets would overshoot and leak the SQL keyword in an early delta.
+        "Prefix ghp_" + "a" * 100 + " " + "z" * 200
+        + " SELECT id, name, email, phone, address, city, country, created"
+        + " FROM app.users WHERE status = True AND role = True"
+        + " AND created > now() AND name LIKE pct ORDER BY id;"
+        + " " + "x" * 200,
+        [80, 80, 80, 80, 200, 300],
+        ["SELECT", "ghp_", "app.users"],
+        ["[token]", "[SQL query]"],
     ),
 ]
 

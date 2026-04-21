@@ -71,7 +71,9 @@ _RE_INTERNAL_URL = re.compile(
 )
 _RE_MCP_PATH = re.compile(r"/mcp/\w+/mcp\b")
 _RE_TOKEN = re.compile(
-    r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_]+"
+    r"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"
+    r"|\bsk-[A-Za-z0-9_-]{20,}\b"
+    r"|\bAKIA[A-Z0-9]{16}\b"
     r"|\bnpm_[A-Za-z0-9]{20,}\b"
     r"|\bxox[a-z]-[A-Za-z0-9-]{10,}\b"
     r"|\beyJ[A-Za-z0-9_-]{20,}\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+",
@@ -108,6 +110,20 @@ def sanitize_thinking(text: str) -> str:
     """Strip sensitive internals (SQL, schemas, IDs, URLs, paths) from reasoning traces."""
     for pattern, replacement in _SANITIZE_RULES:
         text = pattern.sub(replacement, text)
+    return text
+
+
+def sanitize_completed_thinking(text: str) -> str:
+    """Finalize reasoning redaction for completed traces.
+
+    Streaming chunks can safely hold back an unterminated ALL-CAPS SQL statement
+    while more text is still arriving. Once the model has finished, that SQL
+    tail must be redacted before the final flush and before persistence.
+    """
+    text = sanitize_thinking(text)
+    pending_start = find_pending_sql_start(text)
+    if pending_start >= 0:
+        text = f"{text[:pending_start]}[SQL query]"
     return text
 
 

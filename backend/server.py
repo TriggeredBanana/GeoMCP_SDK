@@ -49,7 +49,11 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from config import ALLOWED_ORIGINS, DEMO_MODE, HOST, PORT, list_documents
 from copilot import CopilotClient
-from sanitizer import sanitize_thinking as _sanitize_thinking, find_pending_sql_start as _find_pending_sql
+from sanitizer import (
+    sanitize_completed_thinking as _sanitize_completed_thinking,
+    sanitize_thinking as _sanitize_thinking,
+    find_pending_sql_start as _find_pending_sql,
+)
 from session_manager import SessionManager
 from usage_tracker import get_or_create_tracker, get_tracker
 from db import init_db_pool, close_pool, execute, execute_transaction, query
@@ -311,11 +315,25 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
     # chunk (or final flush) so that patterns split across chunk boundaries
     # are never partially emitted before the sanitizer can recognise them.
     _THINKING_HOLDBACK = 128
+    _MAX_THINKING_CHARS = 100_000
+    _THINKING_TRUNCATED_MARKER = "[thinking truncated]"
 
     reply = ""
     raw_thinking = ""       # unsanitized accumulation for full-text re-sanitization
     chars_sent = 0          # sanitized chars already emitted to client
     map_actions = []
+    thinking_truncated = False
+
+    def _finalize_thinking_text(raw_text: str, *, truncated: bool) -> str:
+        text = _sanitize_completed_thinking(raw_text)
+        if not truncated:
+            return text
+        safe_end = max(0, len(text) - _THINKING_HOLDBACK)
+        text = text[:safe_end]
+        if text:
+            return f"{text}\n{_THINKING_TRUNCATED_MARKER}"
+        return _THINKING_TRUNCATED_MARKER
+
     try:
         async for chunk in manager.send_message_stream(
             copilot_session, message,
@@ -323,10 +341,13 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
         ):
             ctype = chunk["type"]
             if ctype == "thinking":
+                if thinking_truncated:
+                    continue
                 raw_thinking += chunk["content"]
-                if len(raw_thinking) > 100_000:
+                if len(raw_thinking) > _MAX_THINKING_CHARS:
                     # Safety cutoff to prevent memory issues from runaway thinking text.
-                    raw_thinking = raw_thinking[:100_000]
+                    raw_thinking = raw_thinking[:_MAX_THINKING_CHARS]
+                    thinking_truncated = True
                 # Re-sanitize the full accumulated text so patterns that span
                 # chunk boundaries are caught.
                 full_sanitized = _sanitize_thinking(raw_thinking)
@@ -366,7 +387,7 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
 
     # Flush any held-back thinking text now that no more chunks can arrive.
     if raw_thinking:
-        full_sanitized = _sanitize_thinking(raw_thinking)
+        full_sanitized = _finalize_thinking_text(raw_thinking, truncated=thinking_truncated)
         if len(full_sanitized) > chars_sent:
             remaining = full_sanitized[chars_sent:]
             yield f"event: thinking\ndata: {json.dumps({'content': remaining})}\n\n"
@@ -380,7 +401,10 @@ async def _stream_chat(copilot_session, message, map_context, chat_id, user_id, 
 
     # Re-sanitize the full thinking text for persistent storage — ensures
     # patterns split across streaming chunks are properly redacted at rest.
-    thinking_text = _sanitize_thinking(raw_thinking) if raw_thinking else ""
+    thinking_text = (
+        _finalize_thinking_text(raw_thinking, truncated=thinking_truncated)
+        if raw_thinking else ""
+    )
 
     # Persist the full exchange + AI layers atomically.
     user_meta = json.dumps({"tool_hints": tool_hints}) if tool_hints else None

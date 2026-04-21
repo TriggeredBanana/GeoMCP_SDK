@@ -6,6 +6,7 @@ Run standalone: python test_sanitizer.py
 import sys
 
 from sanitizer import sanitize_thinking as sanitize
+from sanitizer import sanitize_completed_thinking as sanitize_completed
 from sanitizer import find_pending_sql_start
 
 
@@ -16,6 +17,7 @@ def _join(*parts: str) -> str:
 GITHUB_TOKEN = _join("gh", "p_", "abcdefghijklmnopqrst1234567890")
 GITHUB_PAT_TOKEN = _join("github", "_pat_", "ABCDEFGHIJ1234567890abcdef")
 OPENAI_STYLE_TOKEN = _join("sk", "-", "abcdefghijklmnopqrstuvwxyz1234")
+OPENAI_PROJECT_TOKEN = _join("sk", "-proj-", "abcdefghijklmnopqrstuvwxyz1234567890")
 NPM_TOKEN = _join("np", "m_", "abcdefghijklmnopqrstuvwxyz1234567890")
 SLACK_BOT_TOKEN = _join("xox", "b-", "123456789012-123456789012-abcdefghijklmnopqrstuvwxyz")
 AZURE_SAS_SIG = _join("si", "g=", "Z3JhbnQtdGhpcy1pcy1hLWxvbmctc2VjcmV0JTJGJTNE")
@@ -167,6 +169,12 @@ cases = [
         f"API key is {OPENAI_STYLE_TOKEN}",
         ["[token]"],
         [_join("sk", "-")],
+    ),
+    (
+        "Token sk-proj-",
+        f"Project key is {OPENAI_PROJECT_TOKEN}",
+        ["[token]"],
+        [_join("sk", "-proj-")],
     ),
     (
         "Token npm_",
@@ -409,14 +417,65 @@ for label, inp, must_have, must_not_have in cases:
         fail += 1
 
 
+# ---- Completed-trace finalization tests ----
+
+completed_cases = [
+    (
+        "Completed: unterminated SQL tail redacted",
+        "Thinking... SELECT password_hash FROM app.users WHERE email = 'a@example.com'",
+        ["Thinking... [SQL query]"],
+        ["SELECT", "password_hash", "app.users", "a@example.com"],
+    ),
+    (
+        "Completed: prior safe text preserved before pending SQL",
+        "Prefix text. SELECT id FROM app.messages WHERE chat_id = 'abc123'",
+        ["Prefix text. [SQL query]"],
+        ["SELECT", "app.messages", "abc123"],
+    ),
+]
+
+print("\n---- Completed trace finalization tests ----")
+for label, inp, must_have, must_not_have in completed_cases:
+    result = sanitize_completed(inp)
+    passed = True
+    for m in must_have:
+        if m not in result:
+            print(f"FAIL [{label}]: expected {m!r} in result")
+            print(f"  input:  {inp!r}")
+            print(f"  result: {result!r}")
+            passed = False
+    for m in must_not_have:
+        if m in result:
+            print(f"FAIL [{label}]: should NOT contain {m!r} in result")
+            print(f"  input:  {inp!r}")
+            print(f"  result: {result!r}")
+            passed = False
+    if passed:
+        ok += 1
+        print(f"PASS [{label}]")
+    else:
+        fail += 1
+
+
 # ---- Streaming holdback simulation tests ----
 # These verify that secrets split across chunk boundaries are never
 # partially emitted before the sanitizer can recognise the full pattern.
 
 _HOLDBACK = 128  # must match server.py _THINKING_HOLDBACK
+_MAX_THINKING_CHARS = 100_000
+_THINKING_TRUNCATED_MARKER = "[thinking truncated]"
 
 
-def simulate_streaming(full_text, chunk_sizes):
+def _finalize_streamed_thinking(raw, chars_sent, truncated):
+    final = sanitize_completed(raw)
+    if truncated:
+        safe_end = max(0, len(final) - _HOLDBACK)
+        final = final[:safe_end]
+        final = f"{final}\n{_THINKING_TRUNCATED_MARKER}" if final else _THINKING_TRUNCATED_MARKER
+    return final[chars_sent:]
+
+
+def simulate_streaming(full_text, chunk_sizes, max_chars=None):
     """Simulate the server's streaming sanitization with holdback buffer.
 
     Mirrors the SQL-aware holdback logic in server.py's _stream_chat.
@@ -425,6 +484,7 @@ def simulate_streaming(full_text, chunk_sizes):
     raw = ""
     chars_sent = 0
     deltas = []
+    truncated = False
 
     pos = 0
     for size in chunk_sizes:
@@ -433,6 +493,9 @@ def simulate_streaming(full_text, chunk_sizes):
         if not chunk:
             break
         raw += chunk
+        if max_chars is not None and len(raw) > max_chars:
+            raw = raw[:max_chars]
+            truncated = True
         sanitized = sanitize(raw)
         safe_end = max(chars_sent, len(sanitized) - _HOLDBACK)
         # Holdback uses sanitized text so offsets stay valid after redaction.
@@ -443,11 +506,13 @@ def simulate_streaming(full_text, chunk_sizes):
         if safe_end > chars_sent:
             deltas.append(sanitized[chars_sent:safe_end])
             chars_sent = safe_end
+        if truncated:
+            break
 
     # Final flush (mirrors server's post-loop flush)
-    sanitized = sanitize(raw)
-    if len(sanitized) > chars_sent:
-        deltas.append(sanitized[chars_sent:])
+    final_delta = _finalize_streamed_thinking(raw, chars_sent, truncated)
+    if final_delta:
+        deltas.append(final_delta)
 
     return "".join(deltas), deltas
 
@@ -520,6 +585,13 @@ streaming_cases = [
         ["[SQL query]"],
     ),
     (
+        "Stream: unterminated SQL at end",
+        "Thinking about this. SELECT password_hash FROM app.messages WHERE chat_id = 'abc123'",
+        [28, 28, 80],
+        ["SELECT", "password_hash", "app.messages", "abc123"],
+        ["[SQL query]"],
+    ),
+    (
         "Stream: redaction before pending SQL (offset mismatch regression)",
         # Token before SQL shrinks from 104→7 chars after redaction; raw
         # offsets would overshoot and leak the SQL keyword in an early delta.
@@ -555,7 +627,7 @@ for label, full_text, chunk_sizes, forbidden, must_in_final in streaming_cases:
             passed = False
 
     # Invariant: streaming result must equal batch sanitization
-    expected = sanitize(full_text)
+    expected = sanitize_completed(full_text)
     if final != expected:
         print(f"FAIL [{label}]: streaming result differs from batch sanitization")
         print(f"  streaming: {final!r}")
@@ -567,6 +639,37 @@ for label, full_text, chunk_sizes, forbidden, must_in_final in streaming_cases:
         print(f"PASS [{label}]")
     else:
         fail += 1
+
+print("\n---- Truncation guard tests ----")
+truncation_input = (
+    "Safe prefix "
+    + ("x" * (_MAX_THINKING_CHARS - len("Safe prefix ") - 6))
+    + _join("gh", "p_", "abcdefghijklmnopqrst1234567890")
+)
+trunc_final, trunc_deltas = simulate_streaming(
+    truncation_input,
+    [60_000, 60_000],
+    max_chars=_MAX_THINKING_CHARS,
+)
+trunc_passed = True
+for i, d in enumerate(trunc_deltas):
+    if _join("gh", "p_") in d:
+        print(f"FAIL [Truncation guard]: delta {i} contains forbidden token fragment")
+        print(f"  delta: {d!r}")
+        trunc_passed = False
+if _THINKING_TRUNCATED_MARKER not in trunc_final:
+    print("FAIL [Truncation guard]: missing truncation marker in final output")
+    print(f"  final: {trunc_final!r}")
+    trunc_passed = False
+if _join("gh", "p_") in trunc_final:
+    print("FAIL [Truncation guard]: final output contains forbidden token fragment")
+    print(f"  final: {trunc_final!r}")
+    trunc_passed = False
+if trunc_passed:
+    ok += 1
+    print("PASS [Truncation guard]")
+else:
+    fail += 1
 
 print()
 print(f"{ok} passed, {fail} failed")
